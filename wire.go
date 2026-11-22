@@ -54,10 +54,6 @@ func appendU16(dst []byte, value uint16) []byte {
 	return binary.BigEndian.AppendUint16(dst, value)
 }
 
-func appendU64(dst []byte, value uint64) []byte {
-	return binary.BigEndian.AppendUint64(dst, value)
-}
-
 func appendI32(dst []byte, value int32) []byte {
 	return appendU32(dst, uint32(value))
 }

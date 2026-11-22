@@ -1,6 +1,7 @@
 package i400
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"testing"
@@ -199,7 +200,7 @@ func TestParseSQLCAFromPayloadStoresTokens(t *testing.T) {
 
 func TestNewSQLErrorWithoutConnectionFallsBack(t *testing.T) {
 	var c *Conn
-	e := c.newSQLError(nil, 1, &sqlcaInfo{SQLCode: -204, SQLState: "42704"})
+	e := c.newSQLError(context.TODO(), 1, &sqlcaInfo{SQLCode: -204, SQLState: "42704"})
 	if e.Code != -204 || e.State != "42704" || e.Message != "SQL execution failed (42704)" {
 		t.Fatalf("newSQLError() = %+v", e)
 	}

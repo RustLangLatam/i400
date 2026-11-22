@@ -32,8 +32,7 @@ type Conn struct {
 	statementCacheMu         sync.Mutex
 	statementCache           map[string]*cachedStatement
 	statementCacheOrder      []string
-	pkg                      *packageState // extended dynamic (SQL package) state; nil when disabled
-	statementSeq             uint32
+	pkg                      *packageState       // extended dynamic (SQL package) state; nil when disabled
 	usedStatementHandles     map[uint16]struct{} // statement ids in use (guarded by nameMu)
 	descriptorSeq            uint32
 	cursorSeq                uint32
@@ -383,10 +382,6 @@ func (c *Conn) CheckNamedValue(value *driver.NamedValue) error {
 
 func (c *Conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, error) {
 	return c.prepareStmt(ctx, query)
-}
-
-func (c *Conn) deadlineFromContext(ctx context.Context) (time.Time, bool) {
-	return ctx.Deadline()
 }
 
 func (c *Conn) setCurrentCommitmentControl(mode int) {

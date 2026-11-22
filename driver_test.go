@@ -36,7 +36,7 @@ func TestDriverOpenConnectorRejectsInvalidDSN(t *testing.T) {
 }
 
 func TestConnectDatabaseRejectsInvalidPortAsConnectionError(t *testing.T) {
-	_, _, err := connectDatabase(nil, Config{Port: -1}, &SystemInfo{}, "user", "password")
+	_, _, err := connectDatabase(context.TODO(), Config{Port: -1}, &SystemInfo{}, "user", "password")
 	if err == nil {
 		t.Fatal("connectDatabase() error = nil, want error")
 	}

@@ -620,19 +620,6 @@ func normalizeServerIdentifier(value string) string {
 	return strings.ToUpper(trimmed)
 }
 
-func encodeEBCDIC37Fixed(text string, size int) []byte {
-	encoded, err := EncodeEBCDIC37(text)
-	if err != nil {
-		return nil
-	}
-	result := make([]byte, size)
-	for i := range result {
-		result[i] = 0x40
-	}
-	copy(result, encoded)
-	return result
-}
-
 // cancelStatement asks IBM i to cancel the statement running in this
 // connection's server job, over a second connection (protocol-native cancel). The cancel is bounded by nativeCancelTimeout.
 func (c *Conn) cancelStatement(ctx context.Context, statementHandle uint16) error {

@@ -113,16 +113,6 @@ func (h *uxCancelHost) config() Config {
 	return Config{Host: "127.0.0.1", Port: h.port, User: "QSECOFR", Password: "PW"}
 }
 
-// waitCancelled waits for the host to receive a cancel request.
-func (h *uxCancelHost) waitCancelled(t *testing.T) {
-	t.Helper()
-	select {
-	case <-h.cancelled:
-	case <-time.After(5 * time.Second):
-		t.Fatal("host did not receive a cancel request")
-	}
-}
-
 func TestUxCancelStatementSendsNativeCancelRequest(t *testing.T) {
 	host := uxStartCancelHost(t, false)
 	c := &Conn{cfg: host.config(), systemInfo: uxNativeInfo()}

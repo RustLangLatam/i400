@@ -646,7 +646,7 @@ func TestStmtExecContextNullBlobSetsNullIndicator(t *testing.T) {
 		}
 
 		// ChangeDescriptor
-		packet, err = readPacket(server)
+		_, err = readPacket(server)
 		if err != nil {
 			t.Errorf("read change descriptor: %v", err)
 			return

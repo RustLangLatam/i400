@@ -2388,7 +2388,7 @@ func parseResultDataBlock(r *sliceReader, rowCount, columnCount, indicatorSize, 
 		Data:          make([]byte, rowCount*rowSize),
 	}
 
-	indicatorBuf := make([]byte, indicatorSize)
+	var indicatorBuf []byte
 	var err error
 	for row := 0; row < rowCount; row++ {
 		for col := 0; col < columnCount; col++ {

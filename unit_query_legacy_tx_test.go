@@ -1,3 +1,5 @@
+//lint:file-ignore SA1019 these tests exercise the legacy driver.Stmt Exec/Query path on purpose.
+
 package i400
 
 import (

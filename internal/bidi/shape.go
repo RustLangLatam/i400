@@ -79,7 +79,6 @@ func (b *BidiShape) Shape(inAttr, outAttr *BidiFlagSet, str []uint16, optionSet 
 		// Lam-alef deshaping
 		if lamAlefOpt == LamAlefResizeBuffer {
 			str = deshapeLamAlefWithResizeBuffer(str, bufLen)
-			bufLen = len(str)
 		} else if lamAlefOpt == LamAlefNear {
 			deshapeLamAlefNear(str, bufLen)
 		} else if lamAlefOpt == LamAlefAtBegin {
@@ -117,7 +116,6 @@ func (b *BidiShape) Shape(inAttr, outAttr *BidiFlagSet, str []uint16, optionSet 
 		// Lam-alef handling
 		if lamAlefOpt == LamAlefResizeBuffer {
 			str = handleLamAlefWithResizeBuffer(str, bufLen, rtl)
-			bufLen = len(str)
 		} else if lamAlefOpt == LamAlefNear {
 			handleLamAlefNear(str, bufLen, rtl)
 		} else if lamAlefOpt == LamAlefAtBegin {
@@ -364,7 +362,7 @@ func handleLamAlefWithResizeBuffer(buffer []uint16, length int, rtl bool) []uint
 	if rtl { // remove the spaces at the end of the buffer
 		copy(compressed, buffer[0:len(buffer)-lamAlefCount])
 	} else { // remove the spaces at the beginning of the buffer
-		copy(compressed, buffer[lamAlefCount:len(buffer)])
+		copy(compressed, buffer[lamAlefCount:])
 	}
 	return compressed
 }

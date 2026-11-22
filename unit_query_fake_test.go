@@ -168,11 +168,6 @@ func uqReplyRC(class uint16, code int32, payload []byte) uqReply {
 	return func([]byte) []byte { return buildTestReplyPacketWithRC(payload, class, code) }
 }
 
-// uqNoReply sends nothing back, for requests the test expects to go unanswered.
-func uqNoReply() uqReply {
-	return func([]byte) []byte { return nil }
-}
-
 // uqSQLCA builds an SQLCA code point with the given SQLCODE, SQLSTATE, result
 // set count and update count.
 func uqSQLCA(code int32, state string, resultSets int, updateCount int32) []byte {
