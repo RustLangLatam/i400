@@ -36,7 +36,7 @@ func ParseDSN(dsn string) (*Config, error) {
 	}
 
 	config := &Config{
-		DSN: parsed.Redacted(), // never the password
+		DSN: redactDSN(dsn), // never the password or the query string
 
 		UseTLS:                scheme == "as400s",
 		Naming:                NamingSQL,

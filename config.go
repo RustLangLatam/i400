@@ -38,7 +38,7 @@ type Config struct {
 	Port               int
 	UseTLS             bool
 	User               string
-	Password           string
+	Password           string `json:"-"`
 	Schema             string
 	Naming             NamingConvention
 	DateFormat         int

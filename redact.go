@@ -1,7 +1,9 @@
 package i400
 
 import (
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strings"
 	"time"
@@ -22,6 +24,67 @@ func (c Config) Format(f fmt.State, verb rune) {
 	_, _ = fmt.Fprintf(f, fmt.FormatString(f, verb), view)
 }
 
+// redactDSN drops the password and the whole query string of a DSN: query options can
+// carry secrets (password, sslKey) and a stored DSN has no use for them.
+func redactDSN(dsn string) string {
+	if dsn == "" {
+		return ""
+	}
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return redacted
+	}
+	u.RawQuery = ""
+	return u.Redacted()
+}
+
+// LogValue keeps slog (its JSON handler included) from printing the password.
+func (c Config) LogValue() slog.Value { return slog.StringValue(c.String()) }
+
+// MarshalJSON encodes the redacted form: the password, the DSN's secrets and secret-looking
+// query options never reach a JSON document.
+func (c Config) MarshalJSON() ([]byte, error) { return json.Marshal(configView(c.redactedCopy())) }
+
+// secretBox holds the password behind a pointer: fmt prints a nested pointer as an
+// address, so reflection printing of a connector or connection cannot show it.
+type secretBox struct{ password string }
+
+// splitSecret returns cfg without its password, its secret-looking query options and its
+// DSN's secrets, and the box that keeps the password for the connection attempt.
+func splitSecret(cfg Config) (Config, *secretBox) {
+	box := &secretBox{password: cfg.Password}
+	cfg.Password = ""
+	cfg.DSN = redactDSN(cfg.DSN)
+	if cfg.RawQuery != nil {
+		q := make(url.Values, len(cfg.RawQuery))
+		for key, values := range cfg.RawQuery {
+			if looksSecret(key) {
+				q[key] = []string{redacted}
+				continue
+			}
+			q[key] = append([]string(nil), values...)
+		}
+		cfg.RawQuery = q
+	}
+	return cfg, box
+}
+
+func (b *secretBox) apply(cfg Config) Config {
+	if b != nil {
+		cfg.Password = b.password
+	}
+	return cfg
+}
+
+// fullConfig is the configuration with the password, for the connection attempt only.
+func (c *Connector) fullConfig() Config { return c.sec.apply(c.cfg) }
+
+// fullConfig is the configuration with the password, for the cancel connection only.
+func (c *Conn) fullConfig() Config { return c.sec.apply(c.cfg) }
+
+// LogValue keeps slog from printing a connector's configuration.
+func (c *Connector) LogValue() slog.Value { return slog.StringValue(fmt.Sprintf("%v", c)) }
+
 // String is the redacted form.
 func (c Config) String() string { return fmt.Sprintf("%+v", c) }
 
@@ -33,13 +96,7 @@ func (c Config) redactedCopy() Config {
 	if out.Password != "" {
 		out.Password = redacted
 	}
-	if out.DSN != "" {
-		if u, err := url.Parse(out.DSN); err == nil {
-			out.DSN = u.Redacted()
-		} else {
-			out.DSN = redacted
-		}
-	}
+	out.DSN = redactDSN(out.DSN)
 	if c.RawQuery != nil {
 		out.RawQuery = make(url.Values, len(c.RawQuery))
 		for key, values := range c.RawQuery {
@@ -55,6 +112,9 @@ func (c Config) redactedCopy() Config {
 
 func looksSecret(key string) bool {
 	k := strings.ToLower(key)
+	if k == "passwordlevel" { // an option about the password, not a secret
+		return false
+	}
 	for _, word := range []string{"pass", "pwd", "secret", "token", "credential", "key"} {
 		if strings.Contains(k, word) {
 			return true
@@ -95,5 +155,5 @@ func NewConnector(cfg Config) (*Connector, error) {
 	if clone.ConnectTimeout == 0 {
 		clone.ConnectTimeout = defaultConnectTimeout
 	}
-	return &Connector{cfg: clone}, nil
+	return newConnector(clone), nil
 }

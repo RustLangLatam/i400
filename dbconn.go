@@ -641,7 +641,7 @@ func (c *Conn) cancelStatement(ctx context.Context, statementHandle uint16) erro
 	defer cancelTimeout()
 
 	cancelInfo := *c.systemInfo
-	cancelConn, _, err := connectDatabase(ctx, c.cfg, &cancelInfo, c.cfg.User, c.cfg.Password)
+	cancelConn, _, err := connectDatabase(ctx, c.fullConfig(), &cancelInfo, c.cfg.User, c.fullConfig().Password)
 	if err != nil {
 		return err
 	}

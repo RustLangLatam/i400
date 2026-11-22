@@ -15,11 +15,18 @@ import (
 type Driver struct{}
 
 type Connector struct {
-	cfg Config
+	cfg Config     // without the password and query secrets (see splitSecret)
+	sec *secretBox // the password
+}
+
+func newConnector(cfg Config) *Connector {
+	safe, box := splitSecret(cfg)
+	return &Connector{cfg: safe, sec: box}
 }
 
 type Conn struct {
-	cfg                      Config
+	cfg                      Config // without the password (see splitSecret)
+	sec                      *secretBox
 	netConn                  net.Conn
 	systemInfo               *SystemInfo
 	jobName                  string
@@ -78,11 +85,11 @@ func (d *Driver) OpenConnector(name string) (driver.Connector, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Connector{cfg: *cfg}, nil
+	return newConnector(*cfg), nil
 }
 
 func (c *Connector) Connect(ctx context.Context) (driver.Conn, error) {
-	return openConn(ctx, c.cfg)
+	return openConn(ctx, c.fullConfig())
 }
 
 func (c *Connector) Driver() driver.Driver {
@@ -117,9 +124,16 @@ func openConn(ctx context.Context, cfg Config) (*Conn, error) {
 		return nil, err
 	}
 
-	conn := &Conn{cfg: cfg, netConn: dbConn, systemInfo: info, jobName: jobName, autoCommit: true, currentCommitmentControl: cfg.CommitmentControl, statementCache: make(map[string]*cachedStatement), pkg: pkg}
+	conn := newConnFrom(cfg, dbConn, info, jobName, pkg)
 	conn.recordWarning(pkgWarning)
 	return conn, nil
+}
+
+// newConnFrom builds the connection state; the password stays in a box, not in the struct.
+func newConnFrom(cfg Config, netConn net.Conn, info *SystemInfo, jobName string, pkg *packageState) *Conn {
+	safe, box := splitSecret(cfg)
+	return &Conn{cfg: safe, sec: box, netConn: netConn, systemInfo: info, jobName: jobName, autoCommit: true,
+		currentCommitmentControl: cfg.CommitmentControl, statementCache: make(map[string]*cachedStatement), pkg: pkg}
 }
 
 func (c *Conn) Close() error {
