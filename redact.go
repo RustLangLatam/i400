@@ -148,12 +148,18 @@ const defaultConnectTimeout = 15 * time.Second
 // instead of building a DSN string when the password, the CA pool or the server
 // name come from configuration: nothing is parsed from or formatted into a URL.
 func NewConnector(cfg Config) (*Connector, error) {
-	if err := cfg.Validate(); err != nil {
-		return nil, err
-	}
 	clone := cfg.clone()
 	if clone.ConnectTimeout == 0 {
 		clone.ConnectTimeout = defaultConnectTimeout
+	}
+	switch {
+	case clone.SocketTimeout == 0:
+		clone.SocketTimeout = defaultSocketTimeout
+	case clone.SocketTimeout < 0: // -1: explicitly no per-read bound
+		clone.SocketTimeout = 0
+	}
+	if err := clone.Validate(); err != nil {
+		return nil, err
 	}
 	return newConnector(clone), nil
 }

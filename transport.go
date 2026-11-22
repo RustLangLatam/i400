@@ -187,6 +187,8 @@ func parseSocketOptions(config *Config) error {
 			return fmt.Errorf("%w: invalid socketTimeout value %q", ErrInvalidDSN, value)
 		}
 		config.SocketTimeout = timeout
+	} else {
+		config.SocketTimeout = defaultSocketTimeout
 	}
 	return nil
 }

@@ -3,12 +3,9 @@ package i400
 import (
 	"context"
 	"database/sql/driver"
-	"encoding/hex"
 	"fmt"
-	"strconv"
 	"strings"
 	"sync"
-	"time"
 )
 
 type Stmt struct {
@@ -218,141 +215,6 @@ func (s *Stmt) checkClosed() error {
 	return nil
 }
 
-func expandSQLQuery(query string, args []driver.NamedValue) (string, error) {
-	if len(args) == 0 {
-		return query, nil
-	}
-
-	// Build name→value lookup for named parameters.
-	byName := make(map[string]int, len(args))
-	for i, a := range args {
-		if a.Name != "" {
-			byName[a.Name] = i
-		}
-	}
-
-	var builder strings.Builder
-	builder.Grow(len(query) + len(args)*8)
-	argIndex := 0
-	state := sqlScanNormal
-
-	for i := 0; i < len(query); i++ {
-		ch := query[i]
-		switch state {
-		case sqlScanNormal:
-			switch ch {
-			case '\'':
-				builder.WriteByte(ch)
-				state = sqlScanSingleQuoted
-			case '"':
-				builder.WriteByte(ch)
-				state = sqlScanDoubleQuoted
-			case '-':
-				if i+1 < len(query) && query[i+1] == '-' {
-					builder.WriteByte(ch)
-					i++
-					builder.WriteByte(query[i])
-					state = sqlScanLineComment
-					continue
-				}
-				builder.WriteByte(ch)
-			case '/':
-				if i+1 < len(query) && query[i+1] == '*' {
-					builder.WriteByte(ch)
-					i++
-					builder.WriteByte(query[i])
-					state = sqlScanBlockComment
-					continue
-				}
-				builder.WriteByte(ch)
-			case '?':
-				if argIndex >= len(args) {
-					return "", fmt.Errorf("parameter count mismatch: got %d values for %d placeholders", len(args), argIndex)
-				}
-				literal, err := sqlLiteralFromNamedValue(args[argIndex])
-				if err != nil {
-					return "", err
-				}
-				builder.WriteString(literal)
-				argIndex++
-			case ':':
-				// Doubled colon (e.g. ::type) – pass through unchanged.
-				if i+1 < len(query) && query[i+1] == ':' {
-					builder.WriteByte(ch)
-					i++
-					builder.WriteByte(query[i])
-					break
-				}
-				// Collect :name identifier.
-				j := i + 1
-				if j < len(query) && isNameStartChar(query[j]) {
-					j++
-					for j < len(query) && isNameContinueChar(query[j]) {
-						j++
-					}
-					name := query[i+1 : j]
-					idx, ok := byName[name]
-					if !ok {
-						return "", fmt.Errorf("named parameter %q not provided", name)
-					}
-					literal, err := sqlLiteralFromNamedValue(args[idx])
-					if err != nil {
-						return "", err
-					}
-					builder.WriteString(literal)
-					i = j - 1
-				} else {
-					builder.WriteByte(ch)
-				}
-			default:
-				builder.WriteByte(ch)
-			}
-		case sqlScanSingleQuoted:
-			builder.WriteByte(ch)
-			if ch == '\'' {
-				if i+1 < len(query) && query[i+1] == '\'' {
-					i++
-					builder.WriteByte(query[i])
-				} else {
-					state = sqlScanNormal
-				}
-			}
-		case sqlScanDoubleQuoted:
-			builder.WriteByte(ch)
-			if ch == '"' {
-				if i+1 < len(query) && query[i+1] == '"' {
-					i++
-					builder.WriteByte(query[i])
-				} else {
-					state = sqlScanNormal
-				}
-			}
-		case sqlScanLineComment:
-			builder.WriteByte(ch)
-			if ch == '\n' {
-				state = sqlScanNormal
-			}
-		case sqlScanBlockComment:
-			builder.WriteByte(ch)
-			if ch == '*' && i+1 < len(query) && query[i+1] == '/' {
-				i++
-				builder.WriteByte(query[i])
-				state = sqlScanNormal
-			}
-		}
-	}
-
-	if state == sqlScanSingleQuoted || state == sqlScanDoubleQuoted || state == sqlScanBlockComment {
-		return "", fmt.Errorf("unterminated SQL literal or comment")
-	}
-	// Only enforce count check when using positional ? placeholders.
-	if len(byName) == 0 && argIndex != len(args) {
-		return "", fmt.Errorf("parameter count mismatch: got %d values for %d placeholders", len(args), argIndex)
-	}
-
-	return builder.String(), nil
-}
-
 func countSQLPlaceholders(query string) (int, error) {
 	count := 0
 	state := sqlScanNormal
@@ -427,35 +289,6 @@ func countSQLPlaceholders(query string) (int, error) {
 		return 0, fmt.Errorf("unterminated SQL literal or comment")
 	}
 	return count, nil
-}
-
-func sqlLiteralFromNamedValue(value driver.NamedValue) (string, error) {
-	normalized, err := driver.DefaultParameterConverter.ConvertValue(value.Value)
-	if err != nil {
-		return "", err
-	}
-
-	switch v := normalized.(type) {
-	case nil:
-		return "NULL", nil
-	case int64:
-		return strconv.FormatInt(v, 10), nil
-	case float64:
-		return strconv.FormatFloat(v, 'g', -1, 64), nil
-	case bool:
-		if v {
-			return "1", nil
-		}
-		return "0", nil
-	case string:
-		return "'" + strings.ReplaceAll(v, "'", "''") + "'", nil
-	case []byte:
-		return "X'" + strings.ToUpper(hex.EncodeToString(v)) + "'", nil
-	case time.Time:
-		return "TIMESTAMP('" + v.Format("2006-01-02-15.04.05.999999999") + "')", nil
-	default:
-		return "", fmt.Errorf("unsupported parameter type %T", v)
-	}
 }
 
 type sqlScanState int

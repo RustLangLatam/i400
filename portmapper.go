@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"time"
 )
 
 func ResolvePort(ctx context.Context, host, service string) (int, error) {
@@ -27,6 +28,9 @@ func ResolvePort(ctx context.Context, host, service string) (int, error) {
 	if deadline, ok := ctx.Deadline(); ok {
 		_ = conn.SetDeadline(deadline)
 	}
+	// A cancelled context must end a read that is waiting for the mapper.
+	stop := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Now()) })
+	defer stop()
 
 	if _, err := io.WriteString(conn, service); err != nil {
 		return 0, err

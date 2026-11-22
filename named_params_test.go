@@ -183,54 +183,6 @@ func TestCountSQLPlaceholdersMixed(t *testing.T) {
 
 // --- expandSQLQuery with :name ---------------------------------------------
 
-func TestExpandSQLQueryNamedParams(t *testing.T) {
-	args := []driver.NamedValue{
-		{Name: "name", Value: "Alice"},
-		{Name: "age", Value: int64(30)},
-	}
-	got, err := expandSQLQuery("SELECT * FROM t WHERE name = :name AND age = :age", args)
-	if err != nil {
-		t.Fatalf("expandSQLQuery() error = %v", err)
-	}
-	want := "SELECT * FROM t WHERE name = 'Alice' AND age = 30"
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-func TestExpandSQLQueryNamedParamInsideStringIgnored(t *testing.T) {
-	args := []driver.NamedValue{{Name: "val", Value: int64(42)}}
-	got, err := expandSQLQuery("SELECT ':val', :val FROM t", args)
-	if err != nil {
-		t.Fatalf("expandSQLQuery() error = %v", err)
-	}
-	want := "SELECT ':val', 42 FROM t"
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-func TestExpandSQLQueryNamedParamTimeTime(t *testing.T) {
-	ts := time.Date(2026, 4, 22, 13, 14, 15, 0, time.UTC)
-	args := []driver.NamedValue{{Name: "ts", Value: ts}}
-	got, err := expandSQLQuery("INSERT INTO t VALUES (:ts)", args)
-	if err != nil {
-		t.Fatalf("expandSQLQuery() error = %v", err)
-	}
-	want := "INSERT INTO t VALUES (TIMESTAMP('2026-04-22-13.14.15'))"
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-func TestExpandSQLQueryNamedParamMissing(t *testing.T) {
-	args := []driver.NamedValue{{Name: "other", Value: int64(1)}}
-	_, err := expandSQLQuery("SELECT :missing FROM t", args)
-	if err == nil {
-		t.Fatal("expected error for missing named param")
-	}
-}
-
 // --- SQLSTATE sentinel errors ----------------------------------------------
 
 func TestSQLErrorIsNoData(t *testing.T) {

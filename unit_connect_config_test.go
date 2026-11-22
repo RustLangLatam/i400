@@ -75,12 +75,13 @@ func TestUCParseDSNTLSOffByDefault(t *testing.T) {
 		}
 	}
 
-	cfg, err = ParseDSN("as400s://user@ibmi.example/?tls=false")
-	if err != nil {
-		t.Fatalf("ParseDSN() error = %v", err)
+	// Fork: tls=false on as400s is an error; the explicit opt-in turns TLS off.
+	if _, err = ParseDSN("as400s://user@ibmi.example/?tls=false"); err == nil {
+		t.Fatal("tls=false on as400s must not silently give plaintext")
 	}
-	if cfg.UseTLS {
-		t.Error("tls=false should turn TLS off even for as400s")
+	cfg, err = ParseDSN("as400s://user@ibmi.example/?tls=false&allowPlaintext=true")
+	if err != nil || cfg.UseTLS {
+		t.Errorf("tls=false with allowPlaintext=true: %v %v", cfg, err)
 	}
 }
 

@@ -3,44 +3,11 @@ package i400
 import (
 	"bytes"
 	"context"
-	"database/sql/driver"
 	"encoding/binary"
 	"net"
 	"testing"
 	"time"
 )
-
-func TestExpandSQLQuery(t *testing.T) {
-	query := "select ? as a, '?' as b, col from t where x = ? and y = 'it''s ?' and z = ? /* ? */ -- ?\n"
-	args := []driver.NamedValue{
-		{Ordinal: 1, Value: "O'Reilly"},
-		{Ordinal: 2, Value: []byte{0x0A, 0xFF}},
-		{Ordinal: 3, Value: true},
-	}
-
-	got, err := expandSQLQuery(query, args)
-	if err != nil {
-		t.Fatalf("expandSQLQuery() error = %v", err)
-	}
-
-	want := "select 'O''Reilly' as a, '?' as b, col from t where x = X'0AFF' and y = 'it''s ?' and z = 1 /* ? */ -- ?\n"
-	if got != want {
-		t.Fatalf("expandSQLQuery() = %q, want %q", got, want)
-	}
-}
-
-func TestExpandSQLQueryTimestamp(t *testing.T) {
-	when := time.Date(2026, time.April, 20, 13, 14, 15, 123456000, time.FixedZone("UTC+2", 2*60*60))
-	got, err := expandSQLQuery("values (?)", []driver.NamedValue{{Ordinal: 1, Value: when}})
-	if err != nil {
-		t.Fatalf("expandSQLQuery() error = %v", err)
-	}
-
-	want := "values (TIMESTAMP('2026-04-20-13.14.15.123456'))"
-	if got != want {
-		t.Fatalf("expandSQLQuery() = %q, want %q", got, want)
-	}
-}
 
 func TestCountSQLPlaceholders(t *testing.T) {
 	count, err := countSQLPlaceholders("select ? from t where a = '?' and b = ? /* ? */")

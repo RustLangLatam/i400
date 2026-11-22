@@ -99,21 +99,38 @@ func ParseDSN(dsn string) (*Config, error) {
 		}
 	}
 
-	if value := strings.TrimSpace(config.RawQuery.Get("tls")); value != "" {
-		enabled, err := strconv.ParseBool(value)
+	allowPlaintext := false
+	if value := strings.TrimSpace(config.RawQuery.Get("allowPlaintext")); value != "" {
+		allow, err := strconv.ParseBool(value)
 		if err != nil {
-			return nil, fmt.Errorf("%w: invalid tls value %q", ErrInvalidDSN, value)
+			return nil, fmt.Errorf("%w: invalid allowPlaintext value %q", ErrInvalidDSN, value)
 		}
-		config.UseTLS = enabled
+		allowPlaintext = allow
 	}
-	if value := strings.TrimSpace(config.RawQuery.Get("secure")); value != "" {
+	for _, key := range []string{"tls", "secure"} {
+		value := strings.TrimSpace(config.RawQuery.Get(key))
+		if value == "" {
+			continue
+		}
 		enabled, err := strconv.ParseBool(value)
 		if err != nil {
-			return nil, fmt.Errorf("%w: invalid secure value %q", ErrInvalidDSN, value)
+			return nil, fmt.Errorf("%w: invalid %s value %q", ErrInvalidDSN, key, value)
+		}
+		if !enabled && scheme == "as400s" && !allowPlaintext {
+			// A TLS scheme must not silently become a plaintext connection with the
+			// password in clear.
+			return nil, fmt.Errorf("%w: %s=false contradicts the as400s scheme; use the as400 scheme with allowPlaintext=true to accept an unencrypted connection", ErrInvalidDSN, key)
 		}
 		config.UseTLS = enabled
 	}
 
+	if value, ok := optionValue(config.RawQuery, "minPasswordLevel"); ok {
+		level, err := strconv.Atoi(value)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid minPasswordLevel value %q", ErrInvalidDSN, value)
+		}
+		config.MinPasswordLevel = level
+	}
 	if err := parseTLSOptions(config); err != nil {
 		return nil, err
 	}

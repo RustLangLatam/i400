@@ -151,15 +151,21 @@ func (c *Conn) Close() error {
 	c.netConn = nil
 	c.mu.Unlock()
 
-	c.opMu.Lock()
+	// An operation in flight holds opMu and may never finish (a stalled server): wait for
+	// it for a bounded time, then close the socket anyway, which ends that operation.
+	timeout := c.cfg.operationTimeout()
+	locked := lockWithin(&c.opMu, timeout)
 	var closeErr error
 	if conn != nil {
-		// A peer that stopped reading must not keep Close waiting on the write.
-		_ = conn.SetWriteDeadline(time.Now().Add(c.cfg.operationTimeout()))
-		_ = sendEndJobRequest(conn)
+		if locked { // nobody else is writing: say goodbye, bounded
+			_ = conn.SetWriteDeadline(time.Now().Add(timeout))
+			_ = sendEndJobRequest(conn)
+		}
 		closeErr = conn.Close()
 	}
-	c.opMu.Unlock()
+	if locked {
+		c.opMu.Unlock()
+	}
 
 	c.statementCacheMu.Lock()
 	c.statementCache = nil
@@ -663,4 +669,25 @@ func (c *Conn) prepareTransientStatement(ctx context.Context, query string) (int
 	}
 	statementName = preparedName
 	return statementType, statementHandle, statementName, parameterFormat, nil
+}
+
+// lockWithin acquires mu, giving up after d. It reports whether it holds the lock.
+func lockWithin(mu *sync.Mutex, d time.Duration) bool {
+	if mu.TryLock() {
+		return true
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	tick := time.NewTicker(5 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-timer.C:
+			return false
+		case <-tick.C:
+			if mu.TryLock() {
+				return true
+			}
+		}
+	}
 }

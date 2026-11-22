@@ -24,8 +24,8 @@ func TestParseDSNSocketOptionDefaults(t *testing.T) {
 	if cfg.ReceiveBufferSize != 0 || cfg.SendBufferSize != 0 {
 		t.Errorf("buffer sizes = %d/%d, want 0/0", cfg.ReceiveBufferSize, cfg.SendBufferSize)
 	}
-	if cfg.SocketTimeout != 0 {
-		t.Errorf("SocketTimeout = %s, want 0", cfg.SocketTimeout)
+	if cfg.SocketTimeout != defaultSocketTimeout {
+		t.Errorf("SocketTimeout = %s, want the default %s", cfg.SocketTimeout, defaultSocketTimeout)
 	}
 }
 

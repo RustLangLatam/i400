@@ -149,6 +149,11 @@ type Config struct {
 	// TLSServerName is the name the server certificate must carry. Empty means
 	// Host.
 	TLSServerName string
+	// MinPasswordLevel is the lowest password level the server may announce (0 to 4, 0 =
+	// accept any). The server chooses the level; a hostile or misconfigured one can pick 0
+	// or 1 (DES / SHA-1 substitutes). A server below the minimum is refused before any
+	// password material is sent. Set 3 or 4 for a modern IBM i.
+	MinPasswordLevel int
 	// OperationTimeout bounds the work the driver starts without a context of
 	// its own: Close, Rollback after the transaction's context ended, statement
 	// close, and the legacy Prepare/Begin/Exec/Query entry points. Zero means 30s.
@@ -163,6 +168,11 @@ type Config struct {
 const (
 	minMaxPacketBytes       = 1024
 	defaultOperationTimeout = 30 * time.Second
+	// defaultSocketTimeout bounds every read from the server when nothing else does: a
+	// stalled server cannot hold a call with a deadline-less context for ever. A query
+	// that legitimately runs longer than this without sending data needs a larger
+	// socketTimeout (or 0 in the DSN to disable it).
+	defaultSocketTimeout = 10 * time.Minute
 )
 
 // operationTimeout is the effective bound for context-less work.
@@ -190,6 +200,9 @@ func (c Config) Validate() error {
 	}
 	if c.MaxPacketBytes < 0 || (c.MaxPacketBytes > 0 && c.MaxPacketBytes < minMaxPacketBytes) || c.MaxPacketBytes > hardMaxPacketLength {
 		return fmt.Errorf("%w: invalid maxPacketBytes %d (0, or %d to %d)", ErrInvalidDSN, c.MaxPacketBytes, minMaxPacketBytes, hardMaxPacketLength)
+	}
+	if c.MinPasswordLevel < 0 || c.MinPasswordLevel > 4 {
+		return fmt.Errorf("%w: invalid minPasswordLevel %d (0 to 4)", ErrInvalidDSN, c.MinPasswordLevel)
 	}
 	if c.OperationTimeout < 0 {
 		return fmt.Errorf("%w: invalid operationTimeout %s", ErrInvalidDSN, c.OperationTimeout)
