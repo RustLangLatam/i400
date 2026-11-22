@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"unicode/utf16"
 
-	"github.com/bashdi/i400/internal/ccsid"
+	"github.com/RustLangLatam/i400/internal/ccsid"
 )
 
 func EncodeUTF16BE(text string) []byte {

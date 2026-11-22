@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/bashdi/i400/internal/ccsid"
+	"github.com/RustLangLatam/i400/internal/ccsid"
 )
 
 // statementTextAttr parses a 0x3831 extended statement text attribute and

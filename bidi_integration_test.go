@@ -28,8 +28,8 @@ import (
 	"testing"
 	"unicode/utf16"
 
-	"github.com/bashdi/i400/internal/bidi"
-	ccsidtab "github.com/bashdi/i400/internal/ccsid"
+	"github.com/RustLangLatam/i400/internal/bidi"
+	ccsidtab "github.com/RustLangLatam/i400/internal/ccsid"
 )
 
 func readGoldenLines(t *testing.T, path string) []string {

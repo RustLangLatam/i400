@@ -5,8 +5,8 @@ import (
 	"testing"
 	"unicode/utf16"
 
-	"github.com/bashdi/i400/internal/bidi"
-	"github.com/bashdi/i400/internal/ccsid"
+	"github.com/RustLangLatam/i400/internal/bidi"
+	"github.com/RustLangLatam/i400/internal/ccsid"
 )
 
 func TestBidiDSNDefaults(t *testing.T) {

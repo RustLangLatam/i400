@@ -1,5 +1,7 @@
 # i400
 
+> **Hardened fork.** This is the `RustLangLatam` fork of [bashdi/i400](https://github.com/bashdi/i400) (MIT, all credit to bashdi for the driver). It adds exact-decimal guarantees, wire bounds, strict TLS and fuzz tests, see [HARDENING.md](HARDENING.md) and [NOTICE.md](NOTICE.md).
+
 `i400` is a pure Go `database/sql` driver for Db2 for IBM i. It talks to the IBM i database host server directly (no ODBC, no CGO) and follows the protocol and behaviour of [JTOpen](https://github.com/IBM/JTOpen), IBM's open-source JDBC driver for IBM i.
 
 Highlights:
@@ -13,7 +15,7 @@ Highlights:
 ## Installation
 
 ```sh
-go get github.com/bashdi/i400
+go get github.com/RustLangLatam/i400
 ```
 
 The driver registers itself as `i400`. Go 1.24 or later is required.
@@ -29,7 +31,7 @@ import (
 	"errors"
 	"log"
 
-	"github.com/bashdi/i400"
+	"github.com/RustLangLatam/i400"
 )
 
 func main() {

@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bashdi/i400/internal/ccsid"
+	"github.com/RustLangLatam/i400/internal/ccsid"
 )
 
 const (

@@ -1,4 +1,4 @@
-module github.com/bashdi/i400
+module github.com/RustLangLatam/i400
 
 go 1.24.0
 
