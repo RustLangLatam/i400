@@ -163,6 +163,21 @@ func (t *Tx) finish(commit bool) error {
 		return driver.ErrBadConn
 	}
 
+	// database/sql rolls back when the transaction's context ends, so a rollback
+	// must not inherit that cancellation; it gets its own bound instead. A commit
+	// keeps the caller's context and is bounded only when that has no deadline.
+	var cancel context.CancelFunc
+	if commit {
+		if _, has := ctx.Deadline(); !has {
+			ctx, cancel = context.WithTimeout(ctx, conn.cfg.operationTimeout())
+		} else {
+			cancel = func() {}
+		}
+	} else {
+		ctx, cancel = context.WithTimeout(context.WithoutCancel(ctx), conn.cfg.operationTimeout())
+	}
+	defer cancel()
+
 	var err error
 	if commit {
 		err = conn.commitTransaction(ctx)

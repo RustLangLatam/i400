@@ -51,7 +51,7 @@ func (c *Conn) ExecBatch(ctx context.Context, query string, rows [][]driver.Valu
 		return 0, err
 	}
 	defer func() {
-		_ = c.closePreparedStatement(context.Background(), statementName, statementHandle)
+		_ = c.closePreparedStatementBounded(statementName, statementHandle)
 	}()
 	return c.execBatchPrepared(ctx, rewritten, statementHandle, statementType, format, rows)
 }

@@ -140,6 +140,8 @@ func (c *Conn) Close() error {
 	c.opMu.Lock()
 	var closeErr error
 	if conn != nil {
+		// A peer that stopped reading must not keep Close waiting on the write.
+		_ = conn.SetWriteDeadline(time.Now().Add(c.cfg.operationTimeout()))
 		_ = sendEndJobRequest(conn)
 		closeErr = conn.Close()
 	}
@@ -155,12 +157,34 @@ func (c *Conn) Close() error {
 	return closeErr
 }
 
-func (c *Conn) Prepare(query string) (driver.Stmt, error) {
-	return c.prepareStmt(context.Background(), query)
+// opContext is the context for work the driver starts without one of the
+// caller's: it ends after Config.OperationTimeout.
+func (c *Conn) opContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), c.cfg.operationTimeout())
 }
 
+func (c *Conn) closePreparedStatementBounded(statementName string, statementHandle uint16) error {
+	ctx, cancel := c.opContext()
+	defer cancel()
+	return c.closePreparedStatement(ctx, statementName, statementHandle)
+}
+
+func (c *Conn) Prepare(query string) (driver.Stmt, error) {
+	ctx, cancel := c.opContext()
+	defer cancel()
+	return c.prepareStmt(ctx, query)
+}
+
+// Begin is the legacy, context-less entry point. The transaction keeps the
+// bounded context only for starting; Commit and Rollback bound themselves.
 func (c *Conn) Begin() (driver.Tx, error) {
-	return c.BeginTx(context.Background(), driver.TxOptions{})
+	ctx, cancel := c.opContext()
+	defer cancel()
+	tx, err := c.BeginTx(ctx, driver.TxOptions{})
+	if t, ok := tx.(*Tx); ok {
+		t.ctx = context.Background()
+	}
+	return tx, err
 }
 
 func (c *Conn) Ping(ctx context.Context) error {
@@ -505,7 +529,7 @@ func (c *Conn) cachedPreparedStatement(ctx context.Context, query string) (*cach
 	if existing := c.statementCache[query]; existing != nil {
 		existing.refs++
 		c.statementCacheMu.Unlock()
-		_ = c.closePreparedStatement(context.Background(), statementName, statementHandle)
+		_ = c.closePreparedStatementBounded(statementName, statementHandle)
 		return existing, nil
 	}
 	if len(c.statementCache) >= c.cfg.StatementCacheSize {
@@ -516,7 +540,7 @@ func (c *Conn) cachedPreparedStatement(ctx context.Context, query string) (*cach
 		c.statementCacheOrder = c.statementCacheOrder[1:]
 		if victim.refs == 0 {
 			go func() {
-				_ = c.closePreparedStatement(context.Background(), victim.statementName, victim.statementHandle)
+				_ = c.closePreparedStatementBounded(victim.statementName, victim.statementHandle)
 			}()
 		}
 	}
@@ -543,7 +567,7 @@ func (c *Conn) releaseCachedStatement(statement *cachedStatement) {
 	}
 	c.statementCacheMu.Unlock()
 	if closeName != "" {
-		_ = c.closePreparedStatement(context.Background(), closeName, closeHandle)
+		_ = c.closePreparedStatementBounded(closeName, closeHandle)
 	}
 }
 
@@ -587,7 +611,7 @@ func (c *Conn) execPreparedTransient(ctx context.Context, query string, args []d
 		return nil, err
 	}
 	defer func() {
-		_ = c.closePreparedStatement(context.Background(), statementName, statementHandle)
+		_ = c.closePreparedStatementBounded(statementName, statementHandle)
 	}()
 	return c.execPrepared(ctx, statementHandle, statementType, parameterFormat, args)
 }
@@ -599,7 +623,7 @@ func (c *Conn) queryPreparedTransient(ctx context.Context, query string, args []
 	}
 	rows, err := c.queryPreparedWithArgs(ctx, statementHandle, statementName, parameterFormat, args)
 	if err != nil {
-		_ = c.closePreparedStatement(context.Background(), statementName, statementHandle)
+		_ = c.closePreparedStatementBounded(statementName, statementHandle)
 		return nil, err
 	}
 	markStoredProcResult(rows, statementType)

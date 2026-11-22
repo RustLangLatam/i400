@@ -314,6 +314,13 @@ func parseTLSOptions(config *Config) error {
 		}
 		config.TLSRootCAs = pool
 	}
+	if value, ok := optionValue(config.RawQuery, "operationTimeout"); ok {
+		timeout, err := parseDurationValue(value)
+		if err != nil {
+			return fmt.Errorf("%w: invalid operationTimeout value %q", ErrInvalidDSN, value)
+		}
+		config.OperationTimeout = timeout
+	}
 	if value, ok := optionValue(config.RawQuery, "maxPacketBytes"); ok {
 		size, err := strconv.Atoi(value)
 		if err != nil {

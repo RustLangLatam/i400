@@ -67,7 +67,7 @@ func (s *Stmt) Close() error {
 	if conn == nil || statementName == "" || !conn.IsValid() {
 		return nil
 	}
-	return conn.closePreparedStatement(context.Background(), statementName, statementHandle)
+	return conn.closePreparedStatementBounded(statementName, statementHandle)
 }
 
 func (s *Stmt) acquire() error {
@@ -113,9 +113,14 @@ func (s *Stmt) Exec(args []driver.Value) (driver.Result, error) {
 	for i, value := range args {
 		namedArgs[i] = driver.NamedValue{Ordinal: i + 1, Value: value}
 	}
-	return s.ExecContext(context.Background(), namedArgs)
+	ctx, cancel := context.WithTimeout(context.Background(), s.conn.cfg.operationTimeout())
+	defer cancel()
+	return s.ExecContext(ctx, namedArgs)
 }
 
+// Query is the legacy, context-less entry point; database/sql uses QueryContext
+// (StmtQueryContext is implemented). The rows keep the context for later
+// fetches, so it is not bounded here: bound the iteration with QueryContext.
 func (s *Stmt) Query(args []driver.Value) (driver.Rows, error) {
 	namedArgs := make([]driver.NamedValue, len(args))
 	for i, value := range args {

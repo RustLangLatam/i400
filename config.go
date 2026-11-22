@@ -149,13 +149,29 @@ type Config struct {
 	// TLSServerName is the name the server certificate must carry. Empty means
 	// Host.
 	TLSServerName string
+	// OperationTimeout bounds the work the driver starts without a context of
+	// its own: Close, Rollback after the transaction's context ended, statement
+	// close, and the legacy Prepare/Begin/Exec/Query entry points. Zero means 30s.
+	// Calls that take a context are bounded by that context.
+	OperationTimeout time.Duration
 	// MaxPacketBytes bounds one reply packet from the server. Zero means the
 	// default (64 MiB); the largest accepted value is 1 GiB. A LOB read through a
 	// locator arrives in one reply, so a LOB above this size is refused.
 	MaxPacketBytes int
 }
 
-const minMaxPacketBytes = 1024
+const (
+	minMaxPacketBytes       = 1024
+	defaultOperationTimeout = 30 * time.Second
+)
+
+// operationTimeout is the effective bound for context-less work.
+func (c Config) operationTimeout() time.Duration {
+	if c.OperationTimeout <= 0 {
+		return defaultOperationTimeout
+	}
+	return c.OperationTimeout
+}
 
 // packetLimit is the effective bound on one reply packet.
 func (c Config) packetLimit() uint32 {
@@ -174,6 +190,9 @@ func (c Config) Validate() error {
 	}
 	if c.MaxPacketBytes < 0 || (c.MaxPacketBytes > 0 && c.MaxPacketBytes < minMaxPacketBytes) || c.MaxPacketBytes > hardMaxPacketLength {
 		return fmt.Errorf("%w: invalid maxPacketBytes %d (0, or %d to %d)", ErrInvalidDSN, c.MaxPacketBytes, minMaxPacketBytes, hardMaxPacketLength)
+	}
+	if c.OperationTimeout < 0 {
+		return fmt.Errorf("%w: invalid operationTimeout %s", ErrInvalidDSN, c.OperationTimeout)
 	}
 	if !validBidiStringType(c.BidiStringType) {
 		return fmt.Errorf("%w: invalid bidiStringType %d", ErrInvalidDSN, c.BidiStringType)
