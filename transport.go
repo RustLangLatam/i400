@@ -34,13 +34,15 @@ func dialHostServer(ctx context.Context, cfg Config, port int) (net.Conn, error)
 
 	var conn net.Conn
 	if cfg.UseTLS {
-		tlsConfig := cfg.TLSConfig
-		if tlsConfig == nil {
-			tlsConfig = &tls.Config{ServerName: cfg.Host}
-		} else if tlsConfig.ServerName == "" {
-			clone := tlsConfig.Clone()
-			clone.ServerName = cfg.Host
-			tlsConfig = clone
+		// Verification is not configurable: only the trusted CAs and the
+		// expected name are.
+		tlsConfig := &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			RootCAs:    cfg.TLSRootCAs,
+			ServerName: cfg.TLSServerName,
+		}
+		if tlsConfig.ServerName == "" {
+			tlsConfig.ServerName = cfg.Host
 		}
 		raw, err := dialer.DialContext(ctx, "tcp", address)
 		if err != nil {
@@ -78,7 +80,7 @@ func dialHostServer(ctx context.Context, cfg Config, port int) (net.Conn, error)
 	if cfg.SocketTimeout > 0 {
 		conn = &socketTimeoutConn{Conn: conn, timeout: cfg.SocketTimeout}
 	}
-	return conn, nil
+	return &limitedConn{Conn: conn, limit: cfg.packetLimit()}, nil
 }
 
 // applySocketOptions sets the TCP options that net.Dialer does not cover

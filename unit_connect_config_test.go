@@ -2,7 +2,7 @@ package i400
 
 import (
 	"context"
-	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
@@ -86,17 +86,17 @@ func TestUCParseDSNTLSOffByDefault(t *testing.T) {
 
 func TestUCConfigClone(t *testing.T) {
 	original := Config{
-		Host:      "h",
-		Libraries: []string{"A", "B"},
-		RawQuery:  url.Values{"k": {"v"}},
-		TLSConfig: &tls.Config{ServerName: "x"},
+		Host:       "h",
+		Libraries:  []string{"A", "B"},
+		RawQuery:   url.Values{"k": {"v"}},
+		TLSRootCAs: x509.NewCertPool(),
 	}
 	cloned := original.clone()
 
 	cloned.Libraries[0] = "CHANGED"
 	cloned.RawQuery["k"][0] = "changed"
 	cloned.RawQuery["added"] = []string{"1"}
-	cloned.TLSConfig.ServerName = "changed"
+	cloned.TLSRootCAs.AddCert(&x509.Certificate{Raw: []byte{1}, RawSubject: []byte{1}})
 	cloned.Host = "other"
 
 	if original.Libraries[0] != "A" {
@@ -105,15 +105,15 @@ func TestUCConfigClone(t *testing.T) {
 	if original.RawQuery["k"][0] != "v" || len(original.RawQuery) != 1 {
 		t.Errorf("original RawQuery shared with clone: %v", original.RawQuery)
 	}
-	if original.TLSConfig.ServerName != "x" {
-		t.Errorf("original TLSConfig shared with clone: %q", original.TLSConfig.ServerName)
+	if !original.TLSRootCAs.Equal(x509.NewCertPool()) {
+		t.Errorf("original TLSRootCAs shared with clone")
 	}
 	if original.Host != "h" {
 		t.Errorf("original Host changed to %q", original.Host)
 	}
 
 	empty := Config{Host: "h"}.clone()
-	if empty.Libraries != nil || empty.RawQuery != nil || empty.TLSConfig != nil {
+	if empty.Libraries != nil || empty.RawQuery != nil || empty.TLSRootCAs != nil {
 		t.Errorf("clone of empty config added values: %+v", empty)
 	}
 }
@@ -262,7 +262,11 @@ func TestUCDialHostServerPlainWithOptions(t *testing.T) {
 		t.Fatalf("dialHostServer() error = %v", err)
 	}
 	defer conn.Close()
-	timeoutConn, ok := conn.(*socketTimeoutConn)
+	limited, ok := conn.(*limitedConn)
+	if !ok {
+		t.Fatalf("conn is %T, want *limitedConn", conn)
+	}
+	timeoutConn, ok := limited.Conn.(*socketTimeoutConn)
 	if !ok {
 		t.Fatalf("conn is %T, want *socketTimeoutConn when SocketTimeout is set", conn)
 	}

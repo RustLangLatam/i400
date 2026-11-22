@@ -1,8 +1,11 @@
 package i400
 
 import (
+	"crypto/x509"
+	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,7 +19,15 @@ func ParseDSN(dsn string) (*Config, error) {
 
 	parsed, err := url.Parse(dsn)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalidDSN, err)
+		// *url.Error quotes the whole input, which carries the password.
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			err = urlErr.Err
+		}
+		return nil, fmt.Errorf("%w: cannot parse the DSN: %v", ErrInvalidDSN, err)
+	}
+	if err := rejectVerificationSwitches(parsed.Query()); err != nil {
+		return nil, err
 	}
 
 	scheme := strings.ToLower(parsed.Scheme)
@@ -25,7 +36,8 @@ func ParseDSN(dsn string) (*Config, error) {
 	}
 
 	config := &Config{
-		DSN:                   dsn,
+		DSN: parsed.Redacted(), // never the password
+
 		UseTLS:                scheme == "as400s",
 		Naming:                NamingSQL,
 		DateFormat:            defaultDateFormat,
@@ -100,6 +112,10 @@ func ParseDSN(dsn string) (*Config, error) {
 			return nil, fmt.Errorf("%w: invalid secure value %q", ErrInvalidDSN, value)
 		}
 		config.UseTLS = enabled
+	}
+
+	if err := parseTLSOptions(config); err != nil {
+		return nil, err
 	}
 
 	if value := strings.TrimSpace(config.RawQuery.Get("naming")); value != "" {
@@ -262,6 +278,50 @@ func ParseDSN(dsn string) (*Config, error) {
 	}
 
 	return config, nil
+}
+
+// verificationSwitches are option names other drivers use to turn certificate
+// verification off. They are refused (not ignored) so that a copied DSN cannot
+// silently believe it is insecure-but-working or secure-but-ignored.
+var verificationSwitches = map[string]bool{
+	"insecureskipverify": true, "tlsinsecure": true, "skipverify": true,
+	"tlsskipverify": true, "sslinsecure": true, "insecure": true,
+	"verifyservercertificate": true, "sslverify": true, "tlsverify": true,
+}
+
+func rejectVerificationSwitches(query url.Values) error {
+	for key := range query {
+		if verificationSwitches[normalizeOptionKey(strings.ToLower(strings.TrimSpace(key)))] {
+			return fmt.Errorf("%w: option %q is not supported: TLS verification cannot be disabled", ErrInvalidDSN, key)
+		}
+	}
+	return nil
+}
+
+// parseTLSOptions reads tlsServerName, tlsCAFile and maxPacketBytes.
+func parseTLSOptions(config *Config) error {
+	if value, ok := optionValue(config.RawQuery, "tlsServerName"); ok {
+		config.TLSServerName = value
+	}
+	if path, ok := optionValue(config.RawQuery, "tlsCAFile"); ok {
+		pem, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("%w: cannot read tlsCAFile", ErrInvalidDSN)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pem) {
+			return fmt.Errorf("%w: tlsCAFile holds no PEM certificate", ErrInvalidDSN)
+		}
+		config.TLSRootCAs = pool
+	}
+	if value, ok := optionValue(config.RawQuery, "maxPacketBytes"); ok {
+		size, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("%w: invalid maxPacketBytes value %q", ErrInvalidDSN, value)
+		}
+		config.MaxPacketBytes = size
+	}
+	return nil
 }
 
 // optionValue looks up an option by its camelCase name and also accepts the

@@ -1,7 +1,7 @@
 package i400
 
 import (
-	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net"
 	"net/url"
@@ -141,7 +141,28 @@ type Config struct {
 	// BidiNumericOrdering (DSN "bidiNumericOrdering") selects the numeric ordering round trip.
 	// The default is false.
 	BidiNumericOrdering bool
-	TLSConfig           *tls.Config
+	// TLSRootCAs is the pool of certificate authorities trusted for a TLS
+	// connection. Nil means the system roots. The server certificate and name
+	// are always verified; there is no option to skip that, and TLS 1.2 is the
+	// lowest version.
+	TLSRootCAs *x509.CertPool
+	// TLSServerName is the name the server certificate must carry. Empty means
+	// Host.
+	TLSServerName string
+	// MaxPacketBytes bounds one reply packet from the server. Zero means the
+	// default (64 MiB); the largest accepted value is 1 GiB. A LOB read through a
+	// locator arrives in one reply, so a LOB above this size is refused.
+	MaxPacketBytes int
+}
+
+const minMaxPacketBytes = 1024
+
+// packetLimit is the effective bound on one reply packet.
+func (c Config) packetLimit() uint32 {
+	if c.MaxPacketBytes <= 0 {
+		return maxPacketLength
+	}
+	return uint32(c.MaxPacketBytes)
 }
 
 func (c Config) Validate() error {
@@ -150,6 +171,9 @@ func (c Config) Validate() error {
 	}
 	if c.Port < 0 || c.Port > 65535 {
 		return fmt.Errorf("%w: invalid port %d", ErrInvalidDSN, c.Port)
+	}
+	if c.MaxPacketBytes < 0 || (c.MaxPacketBytes > 0 && c.MaxPacketBytes < minMaxPacketBytes) || c.MaxPacketBytes > hardMaxPacketLength {
+		return fmt.Errorf("%w: invalid maxPacketBytes %d (0, or %d to %d)", ErrInvalidDSN, c.MaxPacketBytes, minMaxPacketBytes, hardMaxPacketLength)
 	}
 	if !validBidiStringType(c.BidiStringType) {
 		return fmt.Errorf("%w: invalid bidiStringType %d", ErrInvalidDSN, c.BidiStringType)
@@ -272,8 +296,8 @@ func (c Config) clone() Config {
 			clone.RawQuery[key] = append([]string(nil), values...)
 		}
 	}
-	if c.TLSConfig != nil {
-		clone.TLSConfig = c.TLSConfig.Clone()
+	if c.TLSRootCAs != nil {
+		clone.TLSRootCAs = c.TLSRootCAs.Clone()
 	}
 	return clone
 }
