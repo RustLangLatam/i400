@@ -2517,7 +2517,13 @@ func parseOriginalParameterMarkerFormat(payload []byte) (*parameterMarkerFormat,
 	recordSize := int(binary.BigEndian.Uint16(payload[6:8]))
 	format := &parameterMarkerFormat{RecordSize: recordSize}
 	if count == 0 {
+		if err := checkMarkerFormat(format.Fields, format.RecordSize); err != nil {
+			return nil, err
+		}
 		return format, nil
+	}
+	if count > maxColumns {
+		return nil, fmt.Errorf("parameter marker format: %d fields exceeds the limit of %d", count, maxColumns)
 	}
 	if len(payload) < 8+count*54 {
 		return nil, fmt.Errorf("parameter marker format too short: %d", len(payload))
@@ -2544,6 +2550,9 @@ func parseOriginalParameterMarkerFormat(payload []byte) (*parameterMarkerFormat,
 		}
 		format.Fields[i] = field
 	}
+	if err := checkMarkerFormat(format.Fields, format.RecordSize); err != nil {
+		return nil, err
+	}
 	return format, nil
 }
 
@@ -2558,7 +2567,13 @@ func parseExtendedParameterMarkerFormat(payload []byte) (*parameterMarkerFormat,
 	recordSize := int(binary.BigEndian.Uint32(payload[12:16]))
 	format := &parameterMarkerFormat{RecordSize: recordSize}
 	if count == 0 {
+		if err := checkMarkerFormat(format.Fields, format.RecordSize); err != nil {
+			return nil, err
+		}
 		return format, nil
+	}
+	if count > maxColumns {
+		return nil, fmt.Errorf("parameter marker format: %d fields exceeds the limit of %d", count, maxColumns)
 	}
 	if len(payload) < 16+count*64 {
 		return nil, fmt.Errorf("parameter marker format too short: %d", len(payload))
@@ -2585,6 +2600,9 @@ func parseExtendedParameterMarkerFormat(payload []byte) (*parameterMarkerFormat,
 		}
 		format.Fields[i] = field
 	}
+	if err := checkMarkerFormat(format.Fields, format.RecordSize); err != nil {
+		return nil, err
+	}
 	return format, nil
 }
 
@@ -2599,7 +2617,13 @@ func parseSuperExtendedParameterMarkerFormat(payload []byte) (*parameterMarkerFo
 	recordSize := int(binary.BigEndian.Uint32(payload[12:16]))
 	format := &parameterMarkerFormat{RecordSize: recordSize}
 	if count == 0 {
+		if err := checkMarkerFormat(format.Fields, format.RecordSize); err != nil {
+			return nil, err
+		}
 		return format, nil
+	}
+	if count > maxColumns {
+		return nil, fmt.Errorf("parameter marker format: %d fields exceeds the limit of %d", count, maxColumns)
 	}
 	if len(payload) < 16+count*48 {
 		return nil, fmt.Errorf("parameter marker format too short: %d", len(payload))
@@ -2618,6 +2642,9 @@ func parseSuperExtendedParameterMarkerFormat(payload []byte) (*parameterMarkerFo
 			LOBMaxSize:    int(binary.BigEndian.Uint32(payload[base+26 : base+30])),
 		}
 		format.Fields[i] = field
+	}
+	if err := checkMarkerFormat(format.Fields, format.RecordSize); err != nil {
+		return nil, err
 	}
 	return format, nil
 }
@@ -2747,7 +2774,7 @@ func decodeColumnValueWithBidi(col columnMeta, row []byte, dt dateTimeSettings, 
 			}
 			valueLen := int(binary.BigEndian.Uint16(raw[:2]))
 			if valueLen > len(raw)-2 {
-				valueLen = len(raw) - 2
+				return nil, fmt.Errorf("VARBINARY value announces %d bytes but carries %d", valueLen, len(raw)-2)
 			}
 			out := make([]byte, valueLen)
 			copy(out, raw[2:2+valueLen])
@@ -3467,6 +3494,9 @@ func parameterFieldDecimalString(value driver.Value) (string, error) {
 }
 
 func encodeParameterValue(field parameterMarkerField, value driver.Value, isNull bool) ([]byte, error) {
+	if err := checkBindField(field); err != nil {
+		return nil, err
+	}
 	if isNull || value == nil {
 		return make([]byte, parameterFieldNullLength(field)), nil
 	}
@@ -4600,8 +4630,8 @@ func parseLobDataFromPayload(payload []byte) ([]byte, error) {
 				return []byte(nil), nil
 			}
 			length := int(binary.BigEndian.Uint32(cpPayload[2:6]))
-			if length > len(cpPayload)-6 {
-				length = len(cpPayload) - 6
+			if length < 0 || length > len(cpPayload)-6 {
+				return nil, fmt.Errorf("LOB data announces %d bytes but carries %d", length, len(cpPayload)-6)
 			}
 			data := make([]byte, length)
 			copy(data, cpPayload[6:6+length])

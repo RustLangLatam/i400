@@ -207,6 +207,9 @@ func parseSQLDAFormat(data []byte, nameCCSID int) ([]parameterMarkerField, error
 	if len(data) < sqldaHeaderLength+count*sqldaFieldLength {
 		return nil, fmt.Errorf("SQLDA too short for %d fields: %d", count, len(data))
 	}
+	if count > maxColumns {
+		return nil, fmt.Errorf("SQLDA: %d fields exceeds the limit of %d", count, maxColumns)
+	}
 	fields := make([]parameterMarkerField, count)
 	for i := range fields {
 		base := sqldaHeaderLength + i*sqldaFieldLength

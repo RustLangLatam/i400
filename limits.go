@@ -16,6 +16,10 @@ const (
 	// is at most 16000 KB and every cell needs at least one byte.
 	maxBlockCells = 1 << 24
 
+	// maxFieldBytes bounds the size of one parameter marker field (and of an inline LOB
+	// value): an inline LOB is at most 15 MiB (maxLOBThreshold), so 16 MiB leaves room.
+	maxFieldBytes = 16 << 20
+
 	// Smallest encodings, used to prove that a declared count fits the payload.
 	extendedColumnDescriptorBytes = 16 // updateable, searchable, bitmap, offset, length, reserved
 	superExtendedFieldBytes       = 48
@@ -55,6 +59,37 @@ func checkResultBlockShape(remaining, rowCount, columnCount, indicatorSize, rowS
 	}
 	if indicatorBytes+uint64(rowCount)*uint64(rowSize) > uint64(remaining) {
 		return fmt.Errorf("result data block: %d rows do not fit the %d bytes received", rowCount, remaining)
+	}
+	return nil
+}
+
+// checkMarkerFormat validates a parameter marker format a server sent, before anything
+// is sized from it: the field count, every field's length, and the record size, which
+// must also fit one packet together. A lying size is an error, never clamped.
+func checkMarkerFormat(fields []parameterMarkerField, recordSize int) error {
+	if len(fields) > maxColumns {
+		return fmt.Errorf("parameter marker format: %d fields exceeds the limit of %d", len(fields), maxColumns)
+	}
+	if recordSize < 0 || recordSize > maxPacketLength {
+		return fmt.Errorf("parameter marker format: record size %d is outside 0..%d", recordSize, maxPacketLength)
+	}
+	total := 0
+	for i, f := range fields {
+		if f.Length < 0 || f.Length > maxFieldBytes {
+			return fmt.Errorf("parameter marker format: field %d length %d is outside 0..%d", i+1, f.Length, maxFieldBytes)
+		}
+		total += f.Length
+		if total > maxPacketLength {
+			return fmt.Errorf("parameter marker format: the fields together exceed %d bytes", maxPacketLength)
+		}
+	}
+	return nil
+}
+
+// checkBindField refuses to size a buffer from a field description that lies.
+func checkBindField(field parameterMarkerField) error {
+	if field.Length < 0 || field.Length > maxFieldBytes {
+		return fmt.Errorf("parameter field length %d is outside 0..%d", field.Length, maxFieldBytes)
 	}
 	return nil
 }

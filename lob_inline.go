@@ -28,6 +28,9 @@ func isInlineLOBParameterField(field parameterMarkerField) bool {
 func encodeInlineLOBParameterValue(field parameterMarkerField, value any, hasInputValue bool, isNull bool) ([]byte, error) {
 	size := field.Length
 	if size <= 0 {
+		if field.LOBMaxSize < 0 || field.LOBMaxSize > maxFieldBytes-4 {
+			return nil, fmt.Errorf("inline LOB parameter: declared maximum %d is above the %d byte limit", field.LOBMaxSize, maxFieldBytes-4)
+		}
 		size = field.LOBMaxSize + 4
 	}
 	raw := make([]byte, size)
