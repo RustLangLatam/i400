@@ -1631,6 +1631,9 @@ func (r *queryRows) decodeCurrentRow(dest []driver.Value) error {
 	if r.block == nil {
 		return io.EOF
 	}
+	if r.block.RowCount > 0 && r.block.ColumnCount != len(r.meta.columns) {
+		return fmt.Errorf("fetch block has %d columns, the result set describes %d", r.block.ColumnCount, len(r.meta.columns))
+	}
 	rowOffset := r.rowIndex * r.block.RowSize
 	rowEnd := rowOffset + r.block.RowSize
 	if rowOffset < 0 || rowEnd > len(r.block.Data) {
@@ -2011,6 +2014,9 @@ func parseExtendedColumnDescriptors(payload []byte, meta *resultSetMeta) error {
 		return err
 	}
 	numColumns := int(numColumns64)
+	if err := checkCount("extended column descriptors", uint64(numColumns64), extendedColumnDescriptorBytes, r.remaining()-6, maxColumns); err != nil {
+		return err
+	}
 	if err := meta.ensureColumns(numColumns); err != nil {
 		return err
 	}
@@ -2165,6 +2171,9 @@ func parseSuperExtendedDataFormat(payload []byte, meta *resultSetMeta) error {
 	meta.hasDataFormat = true
 	meta.RowSize = int(recordSize64)
 
+	if err := checkCount("super extended data format", uint64(numFields64), superExtendedFieldBytes, r.remaining(), maxColumns); err != nil {
+		return err
+	}
 	if err := meta.ensureColumns(numFields); err != nil {
 		if len(meta.columns) == 0 {
 			meta.columns = make([]columnMeta, numFields)
@@ -2379,13 +2388,18 @@ func parseResultDataPayload(payload []byte) (*fetchBlock, error) {
 }
 
 func parseResultDataBlock(r *sliceReader, rowCount, columnCount, indicatorSize, rowSize int) (*fetchBlock, error) {
+	if err := checkResultBlockShape(r.remaining(), rowCount, columnCount, indicatorSize, rowSize); err != nil {
+		return nil, err
+	}
 	block := &fetchBlock{
 		RowCount:      rowCount,
 		ColumnCount:   columnCount,
 		IndicatorSize: indicatorSize,
 		RowSize:       rowSize,
-		Nulls:         make([]bool, rowCount*columnCount),
 		Data:          make([]byte, rowCount*rowSize),
+	}
+	if indicatorSize > 0 {
+		block.Nulls = make([]bool, rowCount*columnCount)
 	}
 
 	var indicatorBuf []byte

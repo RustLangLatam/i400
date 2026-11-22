@@ -1,6 +1,7 @@
 package i400
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -19,12 +20,39 @@ func clearConnDeadline(conn net.Conn) {
 	_ = conn.SetDeadline(time.Time{})
 }
 
-// maxPacketLength bounds the length a peer may announce for one host-server
-// packet. The largest legitimate payloads are fetch blocks (at most 16000 KB)
-// and inline LOB data (at most 15 MiB, see maxLOBThreshold), so 1 GiB leaves
-// generous headroom while preventing a corrupt or hostile length prefix from
-// forcing a multi-gigabyte allocation.
-const maxPacketLength = 1 << 30
+// maxPacketLength is the default bound on the length a peer may announce for
+// one host-server packet (Config.MaxPacketBytes overrides it, up to
+// hardMaxPacketLength). The largest legitimate payloads are fetch blocks (at
+// most 16000 KB) and inline LOB data (at most 15 MiB, see maxLOBThreshold).
+// A LOB read through a locator arrives in one reply, so a LOB larger than the
+// limit is refused rather than buffered; raise MaxPacketBytes for those.
+const maxPacketLength = 64 << 20
+
+// hardMaxPacketLength is the largest value Config.MaxPacketBytes may take.
+const hardMaxPacketLength = 1 << 30
+
+// packetReadChunk is how much readPacket allocates up front. A larger packet
+// is read in growing steps so memory follows the bytes the peer really sent,
+// not the length it announced.
+const packetReadChunk = 256 << 10
+
+// packetLimiter is implemented by the connections dialHostServer returns.
+type packetLimiter interface{ maxPacketBytes() uint32 }
+
+func packetLimitOf(conn net.Conn) uint32 {
+	if l, ok := conn.(packetLimiter); ok {
+		return l.maxPacketBytes()
+	}
+	return maxPacketLength
+}
+
+// limitedConn carries the per-connection packet limit.
+type limitedConn struct {
+	net.Conn
+	limit uint32
+}
+
+func (c *limitedConn) maxPacketBytes() uint32 { return c.limit }
 
 func readPacket(conn net.Conn) ([]byte, error) {
 	var lengthBuf [4]byte
@@ -35,15 +63,26 @@ func readPacket(conn net.Conn) ([]byte, error) {
 	if length < HeaderSize {
 		return nil, &WireError{Operation: "validate packet length", Err: fmt.Errorf("invalid packet length: %d (minimum %d)", length, HeaderSize)}
 	}
-	if length > maxPacketLength {
-		return nil, &WireError{Operation: "validate packet length", Err: fmt.Errorf("packet length %d exceeds maximum %d", length, maxPacketLength)}
+	if limit := packetLimitOf(conn); length > limit {
+		return nil, &WireError{Operation: "validate packet length", Err: fmt.Errorf("packet length %d exceeds maximum %d", length, limit)}
 	}
-	packet := make([]byte, length)
-	copy(packet, lengthBuf[:])
-	if _, err := io.ReadFull(conn, packet[4:]); err != nil {
+	if length <= packetReadChunk {
+		packet := make([]byte, length)
+		copy(packet, lengthBuf[:])
+		if _, err := io.ReadFull(conn, packet[4:]); err != nil {
+			return nil, &WireError{Operation: "read packet body", Err: err}
+		}
+		return packet, nil
+	}
+	buf := bytes.NewBuffer(make([]byte, 0, packetReadChunk))
+	buf.Write(lengthBuf[:])
+	if _, err := io.CopyN(buf, conn, int64(length)-4); err != nil {
+		if err == io.EOF {
+			err = io.ErrUnexpectedEOF
+		}
 		return nil, &WireError{Operation: "read packet body", Err: err}
 	}
-	return packet, nil
+	return buf.Bytes(), nil
 }
 
 func appendU32(dst []byte, value uint32) []byte {
