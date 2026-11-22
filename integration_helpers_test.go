@@ -74,7 +74,13 @@ func integrationDSNFromParts() string {
 	if host == "" || user == "" {
 		return ""
 	}
-	u := url.URL{Scheme: "as400", Host: host, User: url.UserPassword(user, os.Getenv(integrationPassEnv))}
+	// TLS by default: the account password and the data must not cross the
+	// internet in clear. I400_TEST_PLAINTEXT=1 opts out for a trusted network.
+	scheme := "as400s"
+	if os.Getenv("I400_TEST_PLAINTEXT") == "1" {
+		scheme = "as400"
+	}
+	u := url.URL{Scheme: scheme, Host: host, User: url.UserPassword(user, os.Getenv(integrationPassEnv))}
 	return u.String()
 }
 

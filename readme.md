@@ -99,6 +99,10 @@ Options shown with a JTOpen spelling in the tables (for example `query optimize 
 | Option | Values / format | Default | Description |
 | --- | --- | --- | --- |
 | `tls` / `secure` | `true`, `false` | Based on the scheme | Enables or disables TLS. Either option overrides the scheme. |
+| `tlsCAFile` | path to a PEM file | system roots | Fork: CAs trusted for the server certificate. Verification itself cannot be turned off, and options such as `insecureSkipVerify` are rejected. |
+| `tlsServerName` | host name | the host | Fork: the name the server certificate must carry. |
+| `maxPacketBytes` | 1024 to 1073741824 | 67108864 | Fork: largest reply packet accepted. A LOB read through a locator larger than this is refused. |
+| `operationTimeout` | duration | `30s` | Fork: bound for Close, Rollback after the transaction's context ended, statement close and the legacy context-less entry points. |
 | `port` / `portNumber` | Integer | `8471` (`as400`), `9471` (`as400s`) | Service port. `port` takes precedence over `portNumber`, which takes precedence over the port in the URL. |
 | `naming` | `sql`, `system` | `sql` | SQL naming or IBM i system naming. |
 | `libraries` | Comma-separated library names | Empty | Library list set on the connection. |
@@ -390,7 +394,7 @@ I400_PASSWORT=secret
 I400_BIBLIOTHEK=MYUSER1
 ```
 
-The tests build the DSN `as400://I400_USER:I400_PASSWORT@I400_ADRESSE` and create their objects in the library `I400_BIBLIOTHEK`. Each test drops what it creates. Variables already set in the environment take precedence over `.env`.
+The tests build the DSN `as400s://I400_USER:I400_PASSWORT@I400_ADRESSE` (TLS; set `I400_TEST_PLAINTEXT=1` for `as400://`) and create their objects in the library `I400_BIBLIOTHEK`. Each test drops what it creates. Variables already set in the environment take precedence over `.env`.
 
 Instead of `.env`, the environment variables `I400_TEST_DSN` (a complete DSN) and `I400_TEST_LIBRARY` can be set:
 
