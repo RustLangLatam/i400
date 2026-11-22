@@ -124,30 +124,29 @@ func TestEncodeDecfloatNegativeZeroSignBit(t *testing.T) {
 	}
 }
 
-func TestEncodeDecfloatRoundsHalfEven(t *testing.T) {
-	tests := []struct {
+// Fork rule: a bind never changes the value, so digits beyond the precision are refused
+// unless they are all zeros (IEEE half-even rounding on conversion is not applied).
+func TestEncodeDecfloatRefusesDigitsItWouldRound(t *testing.T) {
+	for _, tt := range []struct {
 		value string
 		size  int
-		want  string
 	}{
-		// 17 digits into DECFLOAT(16): dropped digit is exactly 5, kept digit 6 is even.
-		{"12345678901234565", 8, "12345678901234560"},
-		// kept digit 7 is odd, so round up.
-		{"12345678901234575", 8, "12345678901234580"},
-		// 35 digits into DECFLOAT(34): dropped digit 5, kept digit 4 is even.
-		{"12345678901234567890123456789012345", 16, "12345678901234567890123456789012340"},
-		// dropped digits above half round up.
-		{"12345678901234567890123456789012346", 16, "12345678901234567890123456789012350"},
+		{"12345678901234565", 8},
+		{"12345678901234575", 8},
+		{"12345678901234567890123456789012345", 16},
+		{"12345678901234567890123456789012346", 16},
+	} {
+		if got, err := encodeDecfloat(tt.value, tt.size); err == nil {
+			t.Errorf("encodeDecfloat(%q, %d) = % x, want an error: it would be rounded", tt.value, tt.size, got)
+		}
 	}
-	for _, tt := range tests {
-		encoded, err := encodeDecfloat(tt.value, tt.size)
-		if err != nil {
-			t.Fatalf("encodeDecfloat(%q, %d) error = %v", tt.value, tt.size, err)
-		}
-		got := mustDecodeDecfloatRoundTrip(t, encoded)
-		if !sameDecimalValue(t, got, tt.want) {
-			t.Errorf("encodeDecfloat(%q, %d) decodes to %q, want %q", tt.value, tt.size, got, tt.want)
-		}
+	// Trailing zeros beyond the precision change nothing.
+	encoded, err := encodeDecfloat("12345678901234560", 8)
+	if err != nil {
+		t.Fatalf("exact value refused: %v", err)
+	}
+	if got := mustDecodeDecfloatRoundTrip(t, encoded); !sameDecimalValue(t, got, "12345678901234560") {
+		t.Errorf("decodes to %q", got)
 	}
 }
 
@@ -170,13 +169,9 @@ func TestEncodeDecfloatOutOfRange(t *testing.T) {
 	}
 }
 
-func TestEncodeDecfloatUnderflowRoundsToZero(t *testing.T) {
-	encoded, err := encodeDecfloat("1E-400", 8)
-	if err != nil {
-		t.Fatalf("encodeDecfloat(\"1E-400\", 8) error = %v", err)
-	}
-	if got := mustDecodeDecfloatRoundTrip(t, encoded); !sameDecimalValue(t, got, "0") {
-		t.Fatalf("encodeDecfloat(\"1E-400\", 8) decodes to %q, want 0", got)
+func TestEncodeDecfloatUnderflowIsAnError(t *testing.T) {
+	if got, err := encodeDecfloat("1E-400", 8); err == nil {
+		t.Fatalf("1E-400 encoded to % x: a non-zero value must not become zero", got)
 	}
 }
 

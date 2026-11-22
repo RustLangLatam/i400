@@ -2,6 +2,7 @@ package i400
 
 import (
 	"encoding/binary"
+	"errors"
 	"testing"
 )
 
@@ -241,11 +242,9 @@ func TestDecodeColumnValueDecfloat16Infinity(t *testing.T) {
 	col := columnMeta{Type: db2TypeDecfloat, Length: 8, Offset: 0}
 	row := buildDecfloat16Bits(0x7800000000000000)
 	v, err := decodeColumnValue(col, row)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if v != "Infinity" {
-		t.Fatalf("got %v, want \"Infinity\"", v)
+	var special *DecfloatSpecialError
+	if !errors.As(err, &special) || special.Kind != "Infinity" || v != nil {
+		t.Fatalf("got %v, %v; want a *DecfloatSpecialError for Infinity", v, err)
 	}
 }
 
@@ -253,11 +252,9 @@ func TestDecodeColumnValueDecfloat34Infinity(t *testing.T) {
 	col := columnMeta{Type: db2TypeDecfloat, Length: 16, Offset: 0}
 	row := buildDecfloat34Bits(0x7800000000000000, 0)
 	v, err := decodeColumnValue(col, row)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if v != "Infinity" {
-		t.Fatalf("got %v, want \"Infinity\"", v)
+	var special *DecfloatSpecialError
+	if !errors.As(err, &special) || special.Kind != "Infinity" || v != nil {
+		t.Fatalf("got %v, %v; want a *DecfloatSpecialError for Infinity", v, err)
 	}
 }
 

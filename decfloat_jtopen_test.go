@@ -40,6 +40,9 @@ func TestDecfloatAgainstJTOpen(t *testing.T) {
 			n = 16
 		}
 		got, err := encodeDecfloat(f[1], n)
+		if err != nil && strings.Contains(err.Error(), "cannot be stored exactly") {
+			continue // JTOpen rounds these; this fork refuses a bind that would change the value
+		}
 		if err != nil {
 			t.Errorf("%s: %v", line, err)
 			continue

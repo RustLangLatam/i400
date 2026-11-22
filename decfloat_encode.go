@@ -3,6 +3,7 @@ package i400
 import (
 	"database/sql/driver"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math/big"
 	"strconv"
@@ -120,26 +121,25 @@ func encodeDecfloatFinite(v decfloatValue, f decfloatFormat, sign uint64) (uint6
 			exp = f.qmin
 		}
 	} else {
-		// Round to the precision (half-even).
-		if n := len(coef.String()); n > f.precision {
-			drop := n - f.precision
-			coef = decfloatRoundDrop(coef, drop)
-			exp += drop
-			if n := len(coef.String()); n > f.precision {
-				// Rounding carried into a new digit (10^p): drop one more zero.
-				coef = decfloatRoundDrop(coef, 1)
-				exp++
-			}
+		// A bind never changes the value (this fork's rule): digits beyond the precision
+		// or below the smallest exponent may only be dropped when they are all zero.
+		digitsLen := len(coef.String())
+		if exp < f.qmin-digitsLen-1 || exp > f.qmax+f.precision {
+			return 0, 0, fmt.Errorf("DECFLOAT exponent out of range: %s", v.describe())
 		}
-		// Subnormal: the exponent is below qmin, so round to qmin.
-		if exp < f.qmin {
-			drop := f.qmin - exp
-			if drop > len(coef.String()) {
-				coef = new(big.Int)
-			} else {
-				coef = decfloatRoundDrop(coef, drop)
+		drop := 0
+		if digitsLen > f.precision {
+			drop = digitsLen - f.precision
+		}
+		if exp+drop < f.qmin {
+			drop = f.qmin - exp
+		}
+		if drop > 0 {
+			if drop > digitsLen || new(big.Int).Mod(coef, decfloatPow10(drop)).Sign() != 0 {
+				return 0, 0, errDecfloatWouldChange
 			}
-			exp = f.qmin
+			coef = new(big.Int).Quo(coef, decfloatPow10(drop))
+			exp += drop
 		}
 		// Clamp: exponent above qmax is represented by padding zeros into the
 		// coefficient, as long as they fit the precision.
@@ -255,19 +255,8 @@ func parseDecfloatText(value string) (decfloatValue, error) {
 	return decfloatValue{neg: neg, kind: decfloatKindFinite, coef: coef, exp: exp}, nil
 }
 
-// decfloatRoundDrop divides coef by 10^drop, rounding half-even.
-func decfloatRoundDrop(coef *big.Int, drop int) *big.Int {
-	if drop <= 0 {
-		return coef
-	}
-	p := decfloatPow10(drop)
-	q, r := new(big.Int).QuoRem(coef, p, new(big.Int))
-	cmp := new(big.Int).Lsh(r, 1).Cmp(p)
-	if cmp > 0 || (cmp == 0 && q.Bit(0) == 1) {
-		q.Add(q, big.NewInt(1))
-	}
-	return q
-}
+// errDecfloatWouldChange marks a DECFLOAT bind that cannot be stored without changing it.
+var errDecfloatWouldChange = errors.New("DECFLOAT value cannot be stored exactly (non-zero digits beyond the precision or below the smallest exponent)")
 
 func decfloatPow10(n int) *big.Int {
 	return new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(n)), nil)

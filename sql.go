@@ -2784,14 +2784,23 @@ func decodeColumnValueWithBidi(col columnMeta, row []byte, dt dateTimeSettings, 
 		copy(out, raw)
 		return out, nil
 	case db2TypeDecfloat:
+		var text string
+		var err error
 		switch len(raw) {
 		case 8:
-			return decodeDecfloat16(raw)
+			text, err = decodeDecfloat16(raw)
 		case 16:
-			return decodeDecfloat34(raw)
+			text, err = decodeDecfloat34(raw)
 		default:
 			return nil, fmt.Errorf("unexpected DECFLOAT length %d", len(raw))
 		}
+		if err != nil {
+			return nil, err
+		}
+		if kind := decfloatSpecialKind(text); kind != "" {
+			return nil, &DecfloatSpecialError{Kind: kind}
+		}
+		return text, nil
 	case db2TypeBoolean:
 		return decodeBooleanValue(raw)
 	case db2TypeBlob:
@@ -3091,6 +3100,9 @@ func formatDecfloat(sign int, coef int64, exponent, _ int) string {
 // exponent is the power of 10 applied after the implicit decimal point at position 0 of coefDigits.
 // e.g. coefDigits="123", exponent=-2 → "1.23"; exponent=1 → "1230"
 func formatDecfloatStr(sign int, coefDigits string, exponent int) string {
+	if strings.Trim(coefDigits, "0") == "" {
+		return "0" // one spelling of zero: no exponent padding, no negative zero
+	}
 	n := len(coefDigits) // number of significant digits
 
 	// The actual value is: coefDigits * 10^exponent

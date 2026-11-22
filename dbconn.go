@@ -47,8 +47,11 @@ func connectDatabase(ctx context.Context, cfg Config, info *SystemInfo, user, pa
 	})
 	defer cancelDeadline()
 
-	clientSeed := make([]byte, 8)
-	binary.BigEndian.PutUint64(clientSeed, uint64(time.Now().UnixMilli()))
+	clientSeed, err := newClientSeed()
+	if err != nil {
+		conn.Close()
+		return nil, "", err
+	}
 	serverSeed, err := databaseExchangeSeeds(conn, clientSeed)
 	if err != nil {
 		conn.Close()

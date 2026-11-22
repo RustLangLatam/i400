@@ -44,6 +44,10 @@ func connectSystemInfo(ctx context.Context, cfg Config, user, password string) (
 		return nil, err
 	}
 
+	if err := checkPasswordLevel(cfg, info.PasswordLevel); err != nil {
+		return nil, err
+	}
+
 	if err := signonAuthenticate(conn, info, user, password, clientSeed, serverSeed); err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr
@@ -55,8 +59,10 @@ func connectSystemInfo(ctx context.Context, cfg Config, user, password string) (
 }
 
 func signonExchange(conn net.Conn, system string) (*SystemInfo, []byte, []byte, error) {
-	clientSeed := make([]byte, 8)
-	binary.BigEndian.PutUint64(clientSeed, uint64(time.Now().UnixMilli()))
+	clientSeed, err := newClientSeed()
+	if err != nil {
+		return nil, nil, nil, err
+	}
 
 	request := buildHeader(52, 0, SignonServerID, 0, RequestExchangeAttributes)
 	request = appendU32(request, 10)
@@ -208,4 +214,15 @@ func signonUserBytes(user string, level int, forEncryption bool) ([]byte, error)
 		return nil, fmt.Errorf("user too long")
 	}
 	return EncodeEBCDIC37BlankPad(strings.ToUpper(user), 10)
+}
+
+// checkPasswordLevel refuses a server that announces a password level below
+// Config.MinPasswordLevel, before any password material is sent. The level is chosen by
+// the server: without a minimum, a hostile host can steer the client to the weakest
+// substitute (DES at level 0 or 1).
+func checkPasswordLevel(cfg Config, level int) error {
+	if level < cfg.MinPasswordLevel {
+		return fmt.Errorf("%w: the server announced password level %d, below the configured minimum %d; the password was not sent", ErrAuthentication, level, cfg.MinPasswordLevel)
+	}
+	return nil
 }

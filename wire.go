@@ -3,6 +3,7 @@ package i400
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -183,4 +184,14 @@ func readReplyEnvelope(packet []byte) (replyEnvelope, []byte, error) {
 		RCCode:                int32(binary.BigEndian.Uint32(packet[36:40])),
 	}
 	return envelope, packet[40:], nil
+}
+
+// newClientSeed is the 8-byte client seed of the password exchange. It comes from the
+// system CSPRNG: a clock value is guessable and makes the exchange replayable.
+func newClientSeed() ([]byte, error) {
+	seed := make([]byte, 8)
+	if _, err := rand.Read(seed); err != nil {
+		return nil, &WireError{Operation: "client seed", Err: err}
+	}
+	return seed, nil
 }
