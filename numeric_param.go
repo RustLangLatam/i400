@@ -13,6 +13,10 @@ import (
 // into a parameter error that names the target SQL type; it is never coerced to 0.
 var errInvalidNumericText = errors.New("not a valid number")
 
+// errDecimalWouldTruncate marks decimal text whose non-zero fraction digits do
+// not fit the column scale. The driver refuses it instead of dropping them.
+var errDecimalWouldTruncate = errors.New("decimal value would be truncated")
+
 // maxDecimalExponent bounds the decimal exponent accepted in numeric text.
 // Anything beyond it is either a truncation to zero or an out-of-range value,
 // so there is no need to materialise the digits.
@@ -24,13 +28,15 @@ func numericParameterError(value driver.Value, typeName string, err error) error
 	if err == nil {
 		return nil
 	}
+	// The bound value is never echoed: it may be user or secret data.
 	if errors.Is(err, errInvalidNumericText) || errors.Is(err, strconv.ErrSyntax) {
-		text, _ := parameterFieldValueString(value)
-		return fmt.Errorf("parameter value %q is not a valid number for %s", text, typeName)
+		return fmt.Errorf("parameter value is not a valid number for %s", typeName)
 	}
 	if errors.Is(err, strconv.ErrRange) {
-		text, _ := parameterFieldValueString(value)
-		return fmt.Errorf("parameter value %q out of range for %s", text, typeName)
+		return fmt.Errorf("parameter value out of range for %s", typeName)
+	}
+	if errors.Is(err, errDecimalWouldTruncate) {
+		return fmt.Errorf("parameter value has digits that %s cannot hold (they would be dropped)", typeName)
 	}
 	return err
 }
@@ -41,10 +47,11 @@ func numericParameterError(value driver.Value, typeName string, err error) error
 // digits followed by exactly scale fraction digits, leading integer zeros
 // removed) and the sign.
 //
-// Like JTOpen's SQLDecimal.set (which uses truncateScale and BigDecimal
-// setScale(ROUND_DOWN)), fraction digits beyond the scale are truncated, not
-// rounded and not reported as errors. Integer-digit overflow is reported by the
-// caller against the field precision; it is never truncated here.
+// Unlike JTOpen's SQLDecimal.set, which silently truncates (ROUND_DOWN), this
+// fork refuses a value whose non-zero fraction digits do not fit the scale
+// (errDecimalWouldTruncate): a changed amount is never stored. Trailing zeros
+// beyond the scale lose nothing and are accepted. Integer-digit overflow is
+// reported by the caller against the field precision.
 func decimalTextDigits(text string, scale int) (string, bool, error) {
 	if scale < 0 {
 		scale = 0
@@ -92,7 +99,9 @@ func decimalTextDigits(text string, scale int) (string, bool, error) {
 	digits := intPart + fracPart
 	point := len(intPart) + exp // position of the decimal point within digits
 	if strings.Trim(digits, "0") == "" || point < -maxDecimalExponent {
-		// Zero, or a magnitude too small to survive truncation: the value is 0.
+		if strings.Trim(digits, "0") != "" {
+			return "", false, errDecimalWouldTruncate
+		}
 		digits, point = "", 0
 	} else if point > maxDecimalExponent {
 		return "", false, fmt.Errorf("decimal value out of range")
@@ -108,8 +117,11 @@ func decimalTextDigits(text string, scale int) (string, bool, error) {
 		intDigits, fracDigits = digits[:point], digits[point:]
 	}
 
-	// Truncate (never round) to the field scale, then pad to exactly scale digits.
+	// Pad to exactly scale digits; dropping a non-zero digit is an error.
 	if len(fracDigits) > scale {
+		if strings.Trim(fracDigits[scale:], "0") != "" {
+			return "", false, errDecimalWouldTruncate
+		}
 		fracDigits = fracDigits[:scale]
 	} else {
 		fracDigits += strings.Repeat("0", scale-len(fracDigits))

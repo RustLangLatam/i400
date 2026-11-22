@@ -34,7 +34,7 @@ func TestUDDecodeZonedDecimalSigns(t *testing.T) {
 		{name: "scale below one digit", data: []byte{0xF0, 0xF5}, precision: 2, scale: 2, want: "0.05"},
 		// JTOpen reads only the low nibble of non-sign bytes, so the zone is ignored.
 		{name: "zone of leading bytes ignored", data: []byte{0x31, 0x32, 0x33, 0xC4}, precision: 4, want: "1234"},
-		{name: "pads to precision", data: []byte{0xF7, 0xC8}, precision: 5, want: "00078"},
+		{name: "canonical form drops leading zeros", data: []byte{0xF0, 0xF0, 0xF0, 0xF7, 0xC8}, precision: 5, want: "78"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -71,10 +71,10 @@ func TestUDDecodeZonedDecimalRejectsInvalidData(t *testing.T) {
 	}
 }
 
-func TestUDDecodeZonedDecimalEmptyIsZero(t *testing.T) {
-	got, err := decodeZonedDecimalString(nil, 5, 2)
-	if err != nil || got != "0" {
-		t.Fatalf("decodeZonedDecimalString(nil) = %q, %v; want 0", got, err)
+// The fork refuses an empty value instead of inventing a 0.
+func TestUDDecodeZonedDecimalEmptyIsAnError(t *testing.T) {
+	if got, err := decodeZonedDecimalString(nil, 5, 2); err == nil {
+		t.Fatalf("decodeZonedDecimalString(nil) = %q, want an error", got)
 	}
 }
 

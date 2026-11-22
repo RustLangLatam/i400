@@ -3079,14 +3079,51 @@ func formatDecfloatStr(sign int, coefDigits string, exponent int) string {
 	return result
 }
 
+// maxExactDecimalPrecision is the largest DECIMAL/NUMERIC precision Db2 for i
+// supports (DecimalMaxPrecision 63).
+const maxExactDecimalPrecision = 63
+
+// checkExactDecimalShape validates the precision and scale a server sent for a
+// DECIMAL or NUMERIC column and the number of bytes of the value. A value whose
+// size does not match its description is refused: decoding it anyway would
+// silently drop or invent digits.
+func checkExactDecimalShape(kind string, precision, scale, got, want int) error {
+	if precision < 1 || precision > maxExactDecimalPrecision {
+		return fmt.Errorf("invalid %s precision %d", kind, precision)
+	}
+	if scale < 0 || scale > precision {
+		return fmt.Errorf("invalid %s scale %d for precision %d", kind, scale, precision)
+	}
+	if got != want {
+		return fmt.Errorf("%s(%d,%d) value is %d bytes, want %d", kind, precision, scale, got, want)
+	}
+	return nil
+}
+
+// formatExactDecimal renders exactly precision digits (most significant first)
+// as canonical decimal text: no leading integer zeros except the one before the
+// point, and no negative zero.
+func formatExactDecimal(digits []byte, scale int, negative bool) string {
+	point := len(digits) - scale
+	intPart := strings.TrimLeft(string(digits[:point]), "0")
+	if intPart == "" {
+		intPart = "0"
+	}
+	text := intPart
+	if scale > 0 {
+		text += "." + string(digits[point:])
+	}
+	if negative && strings.Trim(string(digits), "0") != "" {
+		return "-" + text
+	}
+	return text
+}
+
 func decodePackedDecimalString(data []byte, precision, scale int) (string, error) {
-	if len(data) == 0 {
-		return "0", nil
+	if err := checkExactDecimalShape("packed decimal", precision, scale, len(data), precision/2+1); err != nil {
+		return "", err
 	}
-	if precision < 0 {
-		return "", fmt.Errorf("invalid packed decimal precision %d", precision)
-	}
-	digits := make([]byte, 0, precision+1)
+	digits := make([]byte, 0, len(data)*2)
 	sign := byte(0x0C)
 	for i, b := range data {
 		hi := (b >> 4) & 0x0F
@@ -3108,37 +3145,20 @@ func decodePackedDecimalString(data []byte, precision, scale int) (string, error
 			sign = lo
 		}
 	}
-	if len(digits) > precision {
-		digits = digits[len(digits)-precision:]
-	}
-	if len(digits) < precision {
-		pad := make([]byte, precision-len(digits))
-		for i := range pad {
-			pad[i] = '0'
+	// An even precision is stored with one pad digit in the high nibble; it must
+	// be zero, otherwise the value has more digits than the column allows.
+	extra := len(digits) - precision
+	for _, d := range digits[:extra] {
+		if d != '0' {
+			return "", fmt.Errorf("packed decimal value has more than %d digits", precision)
 		}
-		digits = append(pad, digits...)
 	}
-	if scale > 0 {
-		if scale >= len(digits) {
-			pad := make([]byte, scale-len(digits)+1)
-			for i := range pad {
-				pad[i] = '0'
-			}
-			digits = append(pad, digits...)
-		}
-		point := len(digits) - scale
-		digits = append(digits[:point], append([]byte{'.'}, digits[point:]...)...)
-	}
-	prefix := ""
-	if sign == 0x0B || sign == 0x0D {
-		prefix = "-"
-	}
-	return prefix + string(digits), nil
+	return formatExactDecimal(digits[extra:], scale, sign == 0x0B || sign == 0x0D), nil
 }
 
 func decodeZonedDecimalString(data []byte, precision, scale int) (string, error) {
-	if len(data) == 0 {
-		return "0", nil
+	if err := checkExactDecimalShape("zoned decimal", precision, scale, len(data), precision); err != nil {
+		return "", err
 	}
 	digits := make([]byte, 0, len(data))
 	sign := byte(0x0C)
@@ -3157,32 +3177,7 @@ func decodeZonedDecimalString(data []byte, precision, scale int) (string, error)
 		}
 		digits = append(digits, '0'+(b&0x0F))
 	}
-	if len(digits) > precision {
-		digits = digits[len(digits)-precision:]
-	}
-	if len(digits) < precision {
-		pad := make([]byte, precision-len(digits))
-		for i := range pad {
-			pad[i] = '0'
-		}
-		digits = append(pad, digits...)
-	}
-	if scale > 0 {
-		if scale >= len(digits) {
-			pad := make([]byte, scale-len(digits)+1)
-			for i := range pad {
-				pad[i] = '0'
-			}
-			digits = append(pad, digits...)
-		}
-		point := len(digits) - scale
-		digits = append(digits[:point], append([]byte{'.'}, digits[point:]...)...)
-	}
-	prefix := ""
-	if sign == 0x0B || sign == 0x0D {
-		prefix = "-"
-	}
-	return prefix + string(digits), nil
+	return formatExactDecimal(digits, scale, sign == 0x0B || sign == 0x0D), nil
 }
 
 func digitNibble(nibble byte) byte {
@@ -3448,13 +3443,10 @@ func parameterFieldDecimalString(value driver.Value) (string, error) {
 		return strings.TrimSpace(string(v)), nil
 	case int64:
 		return strconv.FormatInt(v, 10), nil
-	case float64:
-		return strconv.FormatFloat(v, 'f', -1, 64), nil
-	case bool:
-		if v {
-			return "1", nil
-		}
-		return "0", nil
+	case float64, bool:
+		// A binary float is not an exact decimal (0.1 is not 0.1) and a bool is
+		// not a number: bind a string such as "0.10" or an int64 instead.
+		return "", fmt.Errorf("%w: %T cannot be bound to an exact decimal column, bind a decimal string or an integer", errPreparedStatementBindingUnsupported, value)
 	default:
 		return "", errPreparedStatementBindingUnsupported
 	}

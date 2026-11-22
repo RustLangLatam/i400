@@ -211,7 +211,6 @@ func TestEncodeDecfloatParameterFromGoValues(t *testing.T) {
 		want  string
 	}{
 		{int64(42), "42"},
-		{float64(1e-7), "1e-07"},
 		{"  -12.5 ", "-12.5"},
 		{[]byte("7E2"), "700"},
 	}

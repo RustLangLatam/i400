@@ -294,14 +294,9 @@ func encodeDecfloatParameter(value driver.Value, field parameterMarkerField) ([]
 	if err != nil {
 		return nil, err
 	}
-	var text string
-	if f, ok := value.(float64); ok {
-		text = strconv.FormatFloat(f, 'g', -1, 64)
-	} else {
-		text, err = parameterFieldDecimalString(value)
-		if err != nil {
-			return nil, err
-		}
+	text, err := parameterFieldDecimalString(value)
+	if err != nil {
+		return nil, err
 	}
 	if _, perr := parseDecfloatText(text); perr != nil {
 		// Empty, whitespace-only or malformed text is a binding error, never 0.

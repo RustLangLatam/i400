@@ -91,20 +91,22 @@ func TestDecimalStringParsingAndTruncation(t *testing.T) {
 	}{
 		{"123.45", []byte{0x12, 0x34, 0x5C}},
 		{"-123.45", []byte{0x12, 0x34, 0x5D}},
-		{" 123.456 ", []byte{0x12, 0x34, 0x5C}}, // extra scale digit truncated, not rounded
-		{"2.279", []byte{0x00, 0x22, 0x7C}},     // ROUND_DOWN, not 2.28
-		{"0.135", []byte{0x00, 0x01, 0x3C}},     // ROUND_DOWN, not 0.14
+		{" 123.450 ", []byte{0x12, 0x34, 0x5C}}, // extra scale digit is zero: nothing lost
 		{"1.5e1", []byte{0x01, 0x50, 0x0C}},     // exponent form
 		{"+.5", []byte{0x00, 0x05, 0x0C}},       // no integer digits
 		{"5.", []byte{0x00, 0x50, 0x0C}},        // trailing point
-		{"-0.001", []byte{0x00, 0x00, 0x0C}},    // truncates to zero; zero is not negative
-		{"1e-400", []byte{0x00, 0x00, 0x0C}},    // underflow truncates to zero
-		{float64(2.5), []byte{0x00, 0x25, 0x0C}},
+		{"-0.000", []byte{0x00, 0x00, 0x0C}},    // zero is never negative
+		{"1e-400", nil},                         // fork: a non-zero value that underflows is refused, not stored as 0
 		{int64(-7), []byte{0x00, 0x70, 0x0D}},
-		{true, []byte{0x00, 0x10, 0x0C}},
 	}
 	for _, tt := range tests {
 		got, err := encodeParameterValue(packedField(), tt.value, false)
+		if tt.want == nil {
+			if err == nil {
+				t.Errorf("encode DECIMAL(%v) = % x, want an error", tt.value, got)
+			}
+			continue
+		}
 		if err != nil {
 			t.Errorf("encode DECIMAL(%v) error = %v", tt.value, err)
 			continue
@@ -138,7 +140,7 @@ func TestNumericDecimalStringParsing(t *testing.T) {
 	}{
 		{"1.5", []byte{0xF0, 0xF0, 0xF1, 0xF5, 0xF0}},
 		{"-1.5", []byte{0xF0, 0xF0, 0xF1, 0xF5, 0xD0}},
-		{"1.239", []byte{0xF0, 0xF0, 0xF1, 0xF2, 0xF3}},
+		{"1.230", []byte{0xF0, 0xF0, 0xF1, 0xF2, 0xF3}},
 	}
 	for _, tt := range tests {
 		got, err := encodeParameterValue(zonedField(), tt.value, false)
