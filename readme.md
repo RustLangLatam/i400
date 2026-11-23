@@ -99,6 +99,8 @@ Options shown with a JTOpen spelling in the tables (for example `query optimize 
 | Option | Values / format | Default | Description |
 | --- | --- | --- | --- |
 | `tls` / `secure` | `true`, `false` | Based on the scheme | Enables or disables TLS. Either option overrides the scheme. |
+| `allowPlaintext` | `true`, `false` | `false` | Fork: `tls=false` or `secure=false` on an `as400s://` DSN is an error unless this is `true`. |
+| `minPasswordLevel` | `0` to `4` | `0` | Fork: refuse a server that announces a lower password level, before any password material is sent. |
 | `tlsCAFile` | path to a PEM file | system roots | Fork: CAs trusted for the server certificate. Verification itself cannot be turned off, and options such as `insecureSkipVerify` are rejected. |
 | `tlsServerName` | host name | the host | Fork: the name the server certificate must carry. |
 | `maxPacketBytes` | 1024 to 1073741824 | 67108864 | Fork: largest reply packet accepted. A LOB read through a locator larger than this is refused. |
