@@ -80,29 +80,33 @@ func TestPlaintextDowngradeNeedsAnExplicitOptIn(t *testing.T) {
 // Finding 8: a minimum password level; a server that announces a lower one is refused
 // before the password (or a substitute of it) is sent.
 func TestMinPasswordLevelRefusesAServerDowngrade(t *testing.T) {
-	signon, database := ucStartRig(t, ucDefaultSignon(0), ucDefaultDB())
-	db := ucOpenDB(t, ucDSN(database.port(), "&minPasswordLevel=3"))
-	err := db.PingContext(ucContext(t))
-	if err == nil || !errors.Is(err, ErrAuthentication) {
-		t.Fatalf("a level 0 server under minPasswordLevel=3: %v", err)
-	}
-	signon.mu.Lock()
-	defer signon.mu.Unlock()
-	for _, r := range signon.records {
-		if r.ReqRepID == RequestSignonInfo {
-			t.Error("the password exchange was sent to a server below the minimum level")
+	// Each rig is a subtest: the signon port is fixed, and only a subtest's cleanup frees
+	// it for the next rig (in v0.1.0 the second half always skipped on "address in use").
+	t.Run("below the minimum", func(t *testing.T) {
+		signon, database := ucStartRig(t, ucDefaultSignon(0), ucDefaultDB())
+		db := ucOpenDB(t, ucDSN(database.port(), "&minPasswordLevel=3"))
+		err := db.PingContext(ucContext(t))
+		if err == nil || !errors.Is(err, ErrAuthentication) {
+			t.Fatalf("a level 0 server under minPasswordLevel=3: %v", err)
 		}
-	}
+		signon.mu.Lock()
+		defer signon.mu.Unlock()
+		for _, r := range signon.records {
+			if r.ReqRepID == RequestSignonInfo {
+				t.Error("the password exchange was sent to a server below the minimum level")
+			}
+		}
+	})
 	if _, err := ParseDSN("as400s://U:P@h/L?minPasswordLevel=9"); err == nil {
 		t.Error("minPasswordLevel above 4 accepted")
 	}
-	// A server at or above the minimum is fine.
-	signon2, database2 := ucStartRig(t, ucDefaultSignon(4), ucDefaultDB())
-	_ = signon2
-	db2 := ucOpenDB(t, ucDSN(database2.port(), "&minPasswordLevel=3"))
-	if err := db2.PingContext(ucContext(t)); err != nil {
-		t.Errorf("level 4 under minimum 3: %v", err)
-	}
+	t.Run("at or above the minimum", func(t *testing.T) {
+		_, database := ucStartRig(t, ucDefaultSignon(4), ucDefaultDB())
+		db := ucOpenDB(t, ucDSN(database.port(), "&minPasswordLevel=3"))
+		if err := db.PingContext(ucContext(t)); err != nil {
+			t.Errorf("level 4 under minimum 3: %v", err)
+		}
+	})
 }
 
 // Finding 8: ResolvePort honours cancellation while it waits for the port mapper.

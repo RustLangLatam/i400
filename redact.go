@@ -45,14 +45,28 @@ func (c Config) LogValue() slog.Value { return slog.StringValue(c.String()) }
 // query options never reach a JSON document.
 func (c Config) MarshalJSON() ([]byte, error) { return json.Marshal(configView(c.redactedCopy())) }
 
-// secretBox holds the password behind a pointer: fmt prints a nested pointer as an
-// address, so reflection printing of a connector or connection cannot show it.
-type secretBox struct{ password string }
+// secretBox holds the password inside a closure. fmt reaches a connector's or
+// connection's fields by reflection, where methods are not called (the fields are
+// unexported) and a bad verb such as %s or %q prints a nested pointer's struct; a
+// closure's captured variables are invisible to reflection, so no path can print them.
+type secretBox struct{ reveal func() string }
+
+func newSecretBox(password string) *secretBox {
+	return &secretBox{reveal: func() string { return password }}
+}
+
+// String, GoString, Format, LogValue and MarshalJSON print the box redacted wherever fmt,
+// slog or encoding/json call a method. Value receivers cover the box and a pointer to it.
+func (secretBox) String() string               { return redacted }
+func (secretBox) GoString() string             { return redacted }
+func (secretBox) Format(f fmt.State, _ rune)   { _, _ = fmt.Fprint(f, redacted) }
+func (secretBox) LogValue() slog.Value         { return slog.StringValue(redacted) }
+func (secretBox) MarshalJSON() ([]byte, error) { return json.Marshal(redacted) }
 
 // splitSecret returns cfg without its password, its secret-looking query options and its
 // DSN's secrets, and the box that keeps the password for the connection attempt.
 func splitSecret(cfg Config) (Config, *secretBox) {
-	box := &secretBox{password: cfg.Password}
+	box := newSecretBox(cfg.Password)
 	cfg.Password = ""
 	cfg.DSN = redactDSN(cfg.DSN)
 	if cfg.RawQuery != nil {
@@ -70,8 +84,8 @@ func splitSecret(cfg Config) (Config, *secretBox) {
 }
 
 func (b *secretBox) apply(cfg Config) Config {
-	if b != nil {
-		cfg.Password = b.password
+	if b != nil && b.reveal != nil {
+		cfg.Password = b.reveal()
 	}
 	return cfg
 }

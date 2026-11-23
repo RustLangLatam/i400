@@ -32,6 +32,16 @@ func TestDecfloatAgainstJTOpen(t *testing.T) {
 34 0.1 2207c000000000000000000000000001
 34 -98765.4321 a2070000000000000000000038fd51a1
 34 12345678901234567890123456789012345678 2609134b9c1e28e56f3c127177823535`
+	// JTOpen rounds a value with more significant digits than the precision; this fork
+	// refuses such a bind. These are the vectors that are skipped for that reason, and
+	// each one must really need rounding, so a regression that starts refusing an exact
+	// value cannot hide behind the skip.
+	wantSkipped := map[string]bool{
+		"16 1234567890123456789":                    true,
+		"16 12345678901234567890123456789012345678": true,
+		"34 12345678901234567890123456789012345678": true,
+	}
+	skipped := 0
 	for _, line := range strings.Split(strings.TrimSpace(data), "\n") {
 		f := strings.Fields(line)
 		size, _ := strconv.Atoi(f[0])
@@ -41,7 +51,14 @@ func TestDecfloatAgainstJTOpen(t *testing.T) {
 		}
 		got, err := encodeDecfloat(f[1], n)
 		if err != nil && strings.Contains(err.Error(), "cannot be stored exactly") {
-			continue // JTOpen rounds these; this fork refuses a bind that would change the value
+			skipped++
+			if !wantSkipped[f[0]+" "+f[1]] {
+				t.Errorf("%d %s: refused, but it is not in the expected rounding set", size, f[1])
+			}
+			if digits, precision := significantDigits(f[1]), decfloatPrecision(size); digits <= precision {
+				t.Errorf("%d %s: refused with %d significant digits, which fit the precision %d", size, f[1], digits, precision)
+			}
+			continue
 		}
 		if err != nil {
 			t.Errorf("%s: %v", line, err)
@@ -51,4 +68,23 @@ func TestDecfloatAgainstJTOpen(t *testing.T) {
 			t.Errorf("%d %s: got %x want %s", size, f[1], got, f[2])
 		}
 	}
+	if skipped != len(wantSkipped) {
+		t.Errorf("skipped %d vectors as needing rounding, want %d", skipped, len(wantSkipped))
+	}
+}
+
+// decfloatPrecision is the coefficient digits of DECFLOAT(16) and DECFLOAT(34).
+func decfloatPrecision(size int) int {
+	if size == 34 {
+		return 34
+	}
+	return 16
+}
+
+// significantDigits counts a decimal literal's coefficient digits without leading or
+// trailing zeros, independently of the encoder under test.
+func significantDigits(literal string) int {
+	mantissa, _, _ := strings.Cut(strings.ToUpper(strings.TrimLeft(literal, "+-")), "E")
+	digits := strings.Trim(strings.ReplaceAll(mantissa, ".", ""), "0")
+	return len(digits)
 }

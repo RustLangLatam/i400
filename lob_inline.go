@@ -3,8 +3,18 @@ package i400
 import (
 	"database/sql/driver"
 	"encoding/binary"
+	"errors"
 	"fmt"
 )
+
+// maxInlineLOBBytes caps one LOB value sent inline: the parameter field cap less the
+// 4-byte length prefix. The parameter record of one statement, which holds every inline
+// LOB it binds, is capped at maxRecordBytes (32 MiB).
+const maxInlineLOBBytes = maxFieldBytes - 4
+
+// ErrInlineLOBTooLarge is returned when a LOB parameter that the server asked for inline
+// (no input locator) is larger than this driver sends inline, or than the field allows.
+var ErrInlineLOBTooLarge = errors.New("as400 driver: inline LOB too large")
 
 // isInlineLOBParameterField reports whether a LOB parameter marker is sent
 // inline (the server did not return an input locator). JTOpen's SQLClob and
@@ -28,8 +38,8 @@ func isInlineLOBParameterField(field parameterMarkerField) bool {
 func encodeInlineLOBParameterValue(field parameterMarkerField, value any, hasInputValue bool, isNull bool) ([]byte, error) {
 	size := field.Length
 	if size <= 0 {
-		if field.LOBMaxSize < 0 || field.LOBMaxSize > maxFieldBytes-4 {
-			return nil, fmt.Errorf("inline LOB parameter: declared maximum %d is above the %d byte limit", field.LOBMaxSize, maxFieldBytes-4)
+		if field.LOBMaxSize < 0 || field.LOBMaxSize > maxInlineLOBBytes {
+			return nil, fmt.Errorf("%w: the server declared an inline maximum of %d bytes; this driver sends at most %d bytes per inline LOB and %d bytes per statement", ErrInlineLOBTooLarge, field.LOBMaxSize, maxInlineLOBBytes, maxRecordBytes)
 		}
 		size = field.LOBMaxSize + 4
 	}
@@ -71,7 +81,7 @@ func encodeInlineLOBParameterValue(field parameterMarkerField, value any, hasInp
 		return nil, err
 	}
 	if len(data) > size-4 {
-		return nil, fmt.Errorf("LOB value of %d bytes exceeds the inline maximum of %d bytes", len(data), size-4)
+		return nil, fmt.Errorf("%w: a value of %d bytes does not fit the field's inline maximum of %d bytes", ErrInlineLOBTooLarge, len(data), size-4)
 	}
 	binary.BigEndian.PutUint32(raw, uint32(length))
 	copy(raw[4:], data)
