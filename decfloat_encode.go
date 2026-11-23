@@ -59,8 +59,10 @@ const (
 
 // encodeDecfloat converts a decimal string (for example "123.45", "-0.001",
 // "1E+10", "NaN", "-Infinity") into the IEEE 754-2008 DPD binary form used by
-// DECFLOAT. size is 8 for DECFLOAT(16) and 16 for DECFLOAT(34). Significant
-// digits beyond the precision are rounded half-even.
+// DECFLOAT. size is 8 for DECFLOAT(16) and 16 for DECFLOAT(34). Nothing is
+// rounded: digits beyond the precision, or below the smallest exponent, may only
+// be dropped when they are all zero; otherwise the bind fails with
+// errDecfloatWouldChange.
 func encodeDecfloat(value string, size int) ([]byte, error) {
 	var f decfloatFormat
 	switch size {

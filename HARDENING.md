@@ -1,6 +1,6 @@
 # Hardening in this fork
 
-This fork of [bashdi/i400](https://github.com/bashdi/i400) (MIT, forked at commit `b9306773`) changes the driver so it can be used for money-handling workloads against a server it does not fully trust. Each row below says what the code does today and names the test that pins it. **No test here connects to a real IBM i, PUB400 or Db2.** Unit tests use fake hosts, `net.Pipe`, local listeners and hand-built payloads; the upstream integration tests are env-gated, skipped without credentials, and were not run.
+This fork of [bashdi/i400](https://github.com/bashdi/i400) (MIT, forked at commit `b9306773`) changes the driver so it can be used for money-handling workloads against a server it does not fully trust. Each row below says what the code does today and names the test that pins it. **No test in this repository connects to a real IBM i by default.** Unit tests use fake hosts, `net.Pipe`, local listeners and hand-built payloads; the upstream integration tests are env-gated and skipped without credentials. The fork was run against a real host twice, by hand, on PUB400 (IBM i 7.5) on 2026-11-23, both times over TLS (database 9471, sign-on 9476): v0.1.0 for DECIMAL ordering and exact round trips, CAST rendering, the four commit modes, journaled and non-journaled tables and delimited identifiers; v0.1.2, through a client package, for DATE, TIME and TIMESTAMP(0, 6, 12) round trips under several date formats and a job CCSID of 65535. See [Verification](readme.md#verification) and the "Not verified" section below.
 
 ## What changed
 
@@ -48,4 +48,6 @@ Before the v0.1.0 tag, each of the 20 targets it had then (21 since v0.1.1) ran 
 
 ## Not verified
 
-Everything that needs a real host, including the inline LOB cap above: what a `CAST` of a DECIMAL renders, CCSID translation on the real server, isolation levels in force, TLS against the host's real certificate, the signon exchange on the wire (the fork dials the signon server on port 9476 before the database server on 9471). The fork has no job-CCSID override, and DECFLOAT NaN and infinities are readable only through a `CAST`.
+Verified on PUB400 (IBM i 7.5, 2026-11-23): what a `CAST` of a DECIMAL renders, the isolation in force for the four commit modes (read back through locks), TLS against the host's real certificate, and the sign-on exchange on the wire (the fork dials the sign-on server on port 9476 before the database server on 9471). One host and one release only.
+
+Not verified on a real host: the inline LOB cap above (when the server sends a LOB inline was not observed), CCSID translation of stored text for other CCSIDs than the host's default (checked against JTOpen vectors only), password level 4, savepoint rollback and bidi data. The fork has no job-CCSID override, and DECFLOAT NaN and infinities are readable only through a `CAST`.
