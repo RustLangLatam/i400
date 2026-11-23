@@ -20,6 +20,12 @@ const (
 	// value): an inline LOB is at most 15 MiB (maxLOBThreshold), so 16 MiB leaves room.
 	maxFieldBytes = 16 << 20
 
+	// maxRecordBytes bounds the parameter record of one statement (the sum of its field
+	// lengths). Binding allocates a null and a value buffer per field, so the worst case
+	// for one bind is about twice this. A legitimate record is a row (at most 32766 bytes)
+	// plus inline LOBs (at most 15 MiB each, rarely more than one or two).
+	maxRecordBytes = 32 << 20
+
 	// Smallest encodings, used to prove that a declared count fits the payload.
 	extendedColumnDescriptorBytes = 16 // updateable, searchable, bitmap, offset, length, reserved
 	superExtendedFieldBytes       = 48
@@ -70,8 +76,8 @@ func checkMarkerFormat(fields []parameterMarkerField, recordSize int) error {
 	if len(fields) > maxColumns {
 		return fmt.Errorf("parameter marker format: %d fields exceeds the limit of %d", len(fields), maxColumns)
 	}
-	if recordSize < 0 || recordSize > maxPacketLength {
-		return fmt.Errorf("parameter marker format: record size %d is outside 0..%d", recordSize, maxPacketLength)
+	if recordSize < 0 || recordSize > maxRecordBytes {
+		return fmt.Errorf("parameter marker format: record size %d is outside 0..%d", recordSize, maxRecordBytes)
 	}
 	total := 0
 	for i, f := range fields {
@@ -79,8 +85,8 @@ func checkMarkerFormat(fields []parameterMarkerField, recordSize int) error {
 			return fmt.Errorf("parameter marker format: field %d length %d is outside 0..%d", i+1, f.Length, maxFieldBytes)
 		}
 		total += f.Length
-		if total > maxPacketLength {
-			return fmt.Errorf("parameter marker format: the fields together exceed %d bytes", maxPacketLength)
+		if total > maxRecordBytes {
+			return fmt.Errorf("parameter marker format: the fields together exceed %d bytes", maxRecordBytes)
 		}
 	}
 	return nil

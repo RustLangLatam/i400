@@ -39,12 +39,18 @@ const (
 // limit, which for inputs this small can only be an announced-length trusted.
 func boundedRun(t *testing.T, f func()) {
 	t.Helper()
+	boundedRunLimit(t, fuzzAllocLimit, f)
+}
+
+// boundedRunLimit is boundedRun with an explicit allocation limit.
+func boundedRunLimit(t *testing.T, limit uint64, f func()) {
+	t.Helper()
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
 	start := time.Now()
 	f()
 	runtime.ReadMemStats(&after)
-	if n := after.TotalAlloc - before.TotalAlloc; n > fuzzAllocLimit {
+	if n := after.TotalAlloc - before.TotalAlloc; n > limit {
 		t.Fatalf("allocated %d bytes for a small input", n)
 	}
 	if d := time.Since(start); d > 5*time.Second {
@@ -195,7 +201,7 @@ func FuzzDecimalBindRoundTrip(f *testing.F) {
 		if err != nil {
 			t.Fatalf("encoded %q for DECIMAL(%d,%d) but cannot decode it: %v", text, p, s, err)
 		}
-		if strings.ContainsAny(text, "eE") && len(text) > 24 {
+		if i := strings.IndexAny(text, "eE"); i >= 0 && len(text)-i > 6 {
 			return // an exponent this large cannot be compared with big.Rat in a test
 		}
 		if !sameDecimalValue(t, dec.(string), strings.TrimSpace(text)) {

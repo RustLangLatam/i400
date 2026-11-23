@@ -28,7 +28,7 @@ func FuzzBindAgainstHostileField(f *testing.F) {
 		case 1:
 			v = value
 		}
-		boundedRun(t, func() { _, _ = encodeParameterValue(field, v, v == nil) })
+		boundedRunLimit(t, 3*maxFieldBytes, func() { _, _ = encodeParameterValue(field, v, v == nil) })
 	})
 }
 
@@ -42,7 +42,9 @@ func FuzzParseFormatThenBind(f *testing.F) {
 		if !fuzzInputOK(data) {
 			t.Skip()
 		}
-		boundedRun(t, func() {
+		// A format may describe up to maxRecordBytes; binding allocates a null and a value
+		// buffer per field, so the worst case is about twice that.
+		boundedRunLimit(t, 3*maxRecordBytes, func() {
 			for _, parse := range []func([]byte) (*parameterMarkerFormat, error){parseSuperExtendedParameterMarkerFormat, parseExtendedParameterMarkerFormat, parseOriginalParameterMarkerFormat} {
 				format, err := parse(data)
 				if err != nil || format == nil {
@@ -110,7 +112,7 @@ func FuzzDecfloatBindNeverChangesTheValue(f *testing.F) {
 		if err != nil {
 			return // NaN and infinities bind as themselves and read as a typed error
 		}
-		if strings.ContainsAny(text, "eE") && len(text) > 24 {
+		if i := strings.IndexAny(text, "eE"); i >= 0 && len(text)-i > 6 {
 			return
 		}
 		if !sameDecimalValue(t, got.(string), strings.TrimSpace(text)) {
