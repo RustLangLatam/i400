@@ -134,6 +134,11 @@ func newWireError(operation string, err error) error {
 	return &WireError{Operation: operation, Err: err}
 }
 
+// ErrParameterTooLong is returned, before anything is sent, when a bound value
+// does not fit the column the host described (BINARY, VARBINARY, CHAR, VARCHAR,
+// graphic). Test it with errors.Is.
+var ErrParameterTooLong = errors.New("parameter value too long")
+
 type SQLWarning struct {
 	Code    int32
 	State   string

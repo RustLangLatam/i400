@@ -3999,7 +3999,7 @@ func encodeFixedBinaryParameter(value driver.Value, field parameterMarkerField) 
 	// F01: never cut a value to the column. The host rejects a non-zero excess
 	// (22001), and a cut WHERE key would match the wrong rows.
 	if field.Length > 0 && len(raw) > field.Length {
-		return nil, fmt.Errorf("parameter value too long")
+		return nil, ErrParameterTooLong
 	}
 	return fitBytesToLength(raw, field.Length, 0x00), nil
 }
@@ -4010,10 +4010,10 @@ func encodeVarbinaryParameter(value driver.Value, field parameterMarkerField) ([
 		return nil, err
 	}
 	if field.Length > 0 && len(raw)+2 > field.Length {
-		return nil, fmt.Errorf("parameter value too long")
+		return nil, ErrParameterTooLong
 	}
 	if len(raw) > math.MaxUint16 {
-		return nil, fmt.Errorf("parameter value too long for 2-byte length prefix")
+		return nil, fmt.Errorf("%w for 2-byte length prefix", ErrParameterTooLong)
 	}
 	buf := make([]byte, 2+len(raw))
 	binary.BigEndian.PutUint16(buf[:2], uint16(len(raw)))
@@ -4039,10 +4039,10 @@ func encodeVarcharParameter(value driver.Value, field parameterMarkerField) ([]b
 		return nil, err
 	}
 	if field.Length > 0 && len(raw)+2 > field.Length {
-		return nil, fmt.Errorf("parameter value too long")
+		return nil, ErrParameterTooLong
 	}
 	if len(raw) > math.MaxUint16 {
-		return nil, fmt.Errorf("parameter value too long for 2-byte length prefix")
+		return nil, fmt.Errorf("%w for 2-byte length prefix", ErrParameterTooLong)
 	}
 	buf := make([]byte, 2+len(raw))
 	binary.BigEndian.PutUint16(buf[:2], uint16(len(raw)))
@@ -4063,10 +4063,10 @@ func encodeVarGraphicParameter(value driver.Value, field parameterMarkerField) (
 		return nil, fmt.Errorf("graphic parameter must encode to an even number of bytes")
 	}
 	if field.Length > 0 && len(raw)+2 > field.Length {
-		return nil, fmt.Errorf("parameter value too long")
+		return nil, ErrParameterTooLong
 	}
 	if len(raw)/2 > math.MaxUint16 {
-		return nil, fmt.Errorf("parameter value too long for 2-byte length prefix")
+		return nil, fmt.Errorf("%w for 2-byte length prefix", ErrParameterTooLong)
 	}
 	buf := make([]byte, 2+len(raw))
 	binary.BigEndian.PutUint16(buf[:2], uint16(len(raw)/2))
@@ -4091,7 +4091,7 @@ func encodeFixedTextBytes(text string, field parameterMarkerField) ([]byte, erro
 		return raw, nil
 	}
 	if len(raw) > field.Length {
-		return nil, fmt.Errorf("parameter value too long")
+		return nil, ErrParameterTooLong
 	}
 	return fitTextBytesToLength(raw, field.Length, field.CCSID), nil
 }
