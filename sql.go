@@ -2411,7 +2411,10 @@ func parseResultDataBlock(r *sliceReader, rowCount, columnCount, indicatorSize, 
 				if err != nil {
 					return nil, err
 				}
-				if indicatorSize >= 2 && binary.BigEndian.Uint16(indicatorBuf[:2]) == 0xFFFF {
+				// F02: any negative indicator is NULL, not only -1. The host
+				// flags a value nulled by a data mapping error (warning +331)
+				// with -2; reading it as data returned "" for a NULL.
+				if indicatorBuf[0]&0x80 != 0 {
 					block.Nulls[row*columnCount+col] = true
 				}
 			}
@@ -3992,6 +3995,11 @@ func encodeFixedBinaryParameter(value driver.Value, field parameterMarkerField) 
 	raw, err := parameterFieldBinaryBytes(value)
 	if err != nil {
 		return nil, err
+	}
+	// F01: never cut a value to the column. The host rejects a non-zero excess
+	// (22001), and a cut WHERE key would match the wrong rows.
+	if field.Length > 0 && len(raw) > field.Length {
+		return nil, fmt.Errorf("parameter value too long")
 	}
 	return fitBytesToLength(raw, field.Length, 0x00), nil
 }

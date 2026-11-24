@@ -51,18 +51,31 @@ func TestTimestampParameterTruncatesToColumnLength(t *testing.T) {
 	}
 }
 
-// JTOpen SQLBinary.set truncates values longer than the column and zero-pads shorter ones.
-func TestFixedBinaryParameterTruncatesAndPads(t *testing.T) {
+// F01 (PUB400 round 3): JTOpen truncates a BINARY value longer than the column,
+// the host would raise SQL0404/22001 for a non-zero excess, and a longer WHERE
+// key matched the cut value. The fork refuses any excess, as it does for
+// VARBINARY, and still zero-pads a shorter value.
+func TestFixedBinaryParameterRefusesExcessAndPads(t *testing.T) {
 	field := parameterMarkerField{SQLType: 912, Length: 4}
 
-	got, err := encodeFixedBinaryParameter([]byte{1, 2, 3, 4, 5, 6}, field)
-	if err != nil {
-		t.Fatalf("encodeFixedBinaryParameter(long) error = %v", err)
-	}
-	if want := []byte{1, 2, 3, 4}; !bytes.Equal(got, want) {
-		t.Fatalf("long value = %v, want %v", got, want)
+	for name, in := range map[string][]byte{
+		"non-zero excess": {1, 2, 3, 4, 5, 6},
+		"zero excess":     {1, 2, 3, 4, 0, 0},
+		"mixed excess":    {1, 2, 3, 4, 0, 6},
+	} {
+		got, err := encodeFixedBinaryParameter(in, field)
+		if err == nil {
+			t.Fatalf("%s: error = nil, want refusal, got %v", name, got)
+		}
+		if strings.Contains(err.Error(), "010203") {
+			t.Fatalf("%s: error carries the value: %v", name, err)
+		}
 	}
 
+	got, err := encodeFixedBinaryParameter([]byte{1, 2, 3, 4}, field)
+	if err != nil || !bytes.Equal(got, []byte{1, 2, 3, 4}) {
+		t.Fatalf("exact value = %v, %v", got, err)
+	}
 	got, err = encodeFixedBinaryParameter([]byte{9}, field)
 	if err != nil {
 		t.Fatalf("encodeFixedBinaryParameter(short) error = %v", err)

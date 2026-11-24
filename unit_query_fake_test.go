@@ -274,3 +274,41 @@ func uqPushSingleRowQuery(f *uqFake) {
 	f.push(FunctionOpenDescribe, uqOpenReply())
 	f.push(FunctionFetch, uqFetchReply(2, 701, 0, []int32{42}, nil))
 }
+
+// F02 (PUB400 round 3): a host NULL produced by a data mapping error (CAST of
+// ill-formed UTF-16 to CCSID 1208, warning +331) is flagged with a negative
+// indicator that is not -1. Every negative indicator is NULL; a zero or
+// positive one is data.
+func TestResultBlockNegativeIndicatorIsNull(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		indicator []byte
+		wantNull  bool
+	}{
+		{"null -1", []byte{0xFF, 0xFF}, true},
+		{"mapping error -2", []byte{0xFF, 0xFE}, true},
+		{"most negative", []byte{0x80, 0x00}, true},
+		{"zero is data", []byte{0x00, 0x00}, false},
+		{"positive is data", []byte{0x00, 0x01}, false},
+		{"one byte negative", []byte{0xFE}, true},
+		{"four byte negative", []byte{0xFF, 0xFF, 0xFF, 0xFE}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := appendU32(nil, 0)
+			data = appendU32(data, 1)
+			data = appendU16(data, 1)
+			data = appendU16(data, uint16(len(tc.indicator)))
+			data = appendU32(data, 0)
+			data = appendU32(data, 4)
+			data = append(data, tc.indicator...)
+			data = appendU32(data, 0)
+			block, err := parseResultDataPayload(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := block.Nulls[0]; got != tc.wantNull {
+				t.Fatalf("Nulls[0] = %v, want %v", got, tc.wantNull)
+			}
+		})
+	}
+}
