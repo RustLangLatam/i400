@@ -1,8 +1,6 @@
 # Changelog
 
-## Unreleased (v0.1.3)
-
-Not tagged or published. Releasing needs the owner's approval.
+## v0.1.3 (2026-11-24)
 
 ### Fixed
 
@@ -17,12 +15,13 @@ Not tagged or published. Releasing needs the owner's approval.
 
 - `ErrParameterTooLong`: every "parameter value too long" refusal (BINARY, VARBINARY, CHAR, VARCHAR, graphic) wraps it,
   so callers can use `errors.Is` (F05). The message text is unchanged.
-- The +331 of a fetch is already in `Conn.Warnings()`, so a mapping NULL (-2, warned) can be told from a stored NULL
-  (-1, no warning). No per-row flag was added.
 - Tests pinned to the PUB400 measurements: the indicators, BINARY(4) reports 4 and VARBINARY(4) reports 6, 4 bytes
   round-trip and 5 are refused on the client (A51, F07). No code change.
 
 ### Documentation
 
 - Corrections to the PUB400 runs, the CCSID counts and the DECFLOAT encode comment (5ec173a, carried from `docs/v0.1.3`).
+- The +331 of a fetch is already in `Conn.Warnings()`, so a mapping NULL (-2, warned) can be told from a stored NULL
+  (-1, no warning). No per-row flag was added.
+- `readme.md`: the v0.1.2 PUB400 verification line (readme.md:364).
 - `HARDENING.md`: two new rows for the changes above.
